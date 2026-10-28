@@ -1,98 +1,159 @@
 package com.example.shipperincome.data.repository
 
 import android.content.Context
+import android.util.Log
 import com.example.shipperincome.data.model.Shift
-import kotlinx.serialization.encodeToString
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import java.io.File
 import java.io.IOException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
-class ShiftRepository(private val context: Context) {
+/** Ket qua doc file: neu file hong, ban goc duoc sao luu sang [corruptBackup] truoc khi tra ve list rong. */
+data class ShiftLoadResult(
+    val shifts: List<Shift>,
+    val corruptBackup: File? = null
+)
 
-    // Tên file lưu dữ liệu
-    private val fileName = "shifts_data.json"
+class ShiftRepository(private val dataDir: File) {
 
-    // Settings repository để lấy default values cho migration
-    private val settingsRepository = SettingsRepository(context)
+    constructor(context: Context) : this(context.filesDir)
 
-    // Đối tượng Json để encode/decode
+    private val file = File(dataDir, FILE_NAME)
+    private val writeLock = Mutex()
+
     private val json = Json {
-        prettyPrint = true // Giúp file JSON dễ đọc hơn
-        ignoreUnknownKeys = true // Bỏ qua các trường không biết khi đọc
-        encodeDefaults = true // Đảm bảo các giá trị mặc định (như id) được lưu
+        prettyPrint = true
+        ignoreUnknownKeys = true
+        encodeDefaults = true
     }
 
-    // Hàm lưu danh sách tất cả các ca làm vào file
-    fun saveAllShifts(shifts: List<Shift>) {
-        try {
-            val jsonString = json.encodeToString(shifts)
-            context.openFileOutput(fileName, Context.MODE_PRIVATE).use {
-                it.write(jsonString.toByteArray())
-            }
-            println("Shifts saved successfully to $fileName (${shifts.size} items)") // Log để debug
+    suspend fun saveAllShifts(shifts: List<Shift>) = withContext(Dispatchers.IO) {
+        writeLock.withLock { writeAtomically(json.encodeToString(ListSerializer(Shift.serializer()), shifts)) }
+    }
+
+    suspend fun loadAllShifts(): ShiftLoadResult = withContext(Dispatchers.IO) {
+        writeLock.withLock { loadLocked() }
+    }
+
+    /** Dung cho sao luu: tra ve JSON cua danh sach hien tai. */
+    fun encode(shifts: List<Shift>): String =
+        json.encodeToString(ListSerializer(Shift.serializer()), shifts)
+
+    /** Dung cho khoi phuc: nem exception neu chuoi khong hop le. */
+    fun decode(raw: String): List<Shift> =
+        json.decodeFromString(ListSerializer(StoredShift.serializer()), raw).map { it.toShift() }
+
+    private fun loadLocked(): ShiftLoadResult {
+        if (!file.exists() || file.length() == 0L) return ShiftLoadResult(emptyList())
+
+        val text = try {
+            file.readText()
         } catch (e: IOException) {
-            println("Error saving shifts to $fileName: ${e.message}")
-            // Cân nhắc ném lỗi hoặc thông báo cho người dùng
-        } catch (e: Exception) {
-            println("Error encoding shifts: ${e.message}")
+            Log.e(TAG, "Cannot read $FILE_NAME", e)
+            return ShiftLoadResult(emptyList(), backupCorruptFile())
         }
-    }
+        if (text.isBlank()) return ShiftLoadResult(emptyList())
 
-    // Hàm đọc danh sách tất cả các ca làm từ file
-    fun loadAllShifts(): List<Shift> {
         return try {
-            val file = File(context.filesDir, fileName)
-            if (!file.exists() || file.length() == 0L) { // Kiểm tra file tồn tại và không rỗng
-                println("File not found or empty: $fileName. Returning empty list.")
-                emptyList() // Trả về danh sách rỗng nếu file không tồn tại hoặc rỗng
-            } else {
-                val jsonString = context.openFileInput(fileName).bufferedReader().use { it.readText() }
-                 // Kiểm tra lại nội dung trước khi decode
-                if (jsonString.isBlank()) {
-                     println("File content is blank: $fileName. Returning empty list.")
-                     emptyList()
-                } else {
-                     val shifts = json.decodeFromString<List<Shift>>(jsonString)
-                     println("Shifts loaded successfully from $fileName: ${shifts.size} items.") // Log
-
-                     // Migrate data cũ không có snapshot values
-                     val migratedShifts = migrateOldShifts(shifts)
-
-                     // Lưu lại nếu có migration
-                     if (migratedShifts.any { it.taxRateSnapshot != shifts.find { old -> old.id == it.id }?.taxRateSnapshot }) {
-                         saveAllShifts(migratedShifts)
-                         println("Migrated ${migratedShifts.size} shifts with default snapshot values")
-                     }
-
-                     migratedShifts
-                }
+            val stored = json.decodeFromString(ListSerializer(StoredShift.serializer()), text)
+            val shifts = stored.map { it.toShift() }
+            if (stored.any { it.isLegacy() }) {
+                writeAtomically(json.encodeToString(ListSerializer(Shift.serializer()), shifts))
             }
-        } catch (e: IOException) {
-            println("Error loading shifts from $fileName: ${e.message}")
-            emptyList() // Trả về danh sách rỗng nếu có lỗi đọc file
+            ShiftLoadResult(shifts)
         } catch (e: Exception) {
-             // Có thể là lỗi SerializationException nếu cấu trúc file JSON cũ không khớp model mới
-             println("Error decoding shifts from $fileName: ${e.message}")
-             // Có thể cân nhắc xóa file cũ hoặc thông báo lỗi nghiêm trọng
-             emptyList()
+            // Khong tra ve list rong roi de lan luu sau ghi de: giu lai ban goc de con cuu duoc.
+            Log.e(TAG, "Cannot decode $FILE_NAME", e)
+            ShiftLoadResult(emptyList(), backupCorruptFile())
         }
     }
 
-    // Hàm migrate data cũ không có snapshot values
-    private fun migrateOldShifts(shifts: List<Shift>): List<Shift> {
-        return shifts.map { shift ->
-            // Check nếu shift có snapshot values đúng (khác default hoặc 0)
-            // Data cũ sẽ có default values 0.057 và 100.0
-            val needsMigration = (shift.taxRateSnapshot == 0.0 && shift.deliveryFeeSnapshot == 0.0)
+    private fun backupCorruptFile(): File? = try {
+        val backup = File(dataDir, "shifts_data.corrupt-${System.currentTimeMillis()}.json")
+        Files.move(file.toPath(), backup.toPath(), StandardCopyOption.REPLACE_EXISTING)
+        backup
+    } catch (e: IOException) {
+        Log.e(TAG, "Cannot back up corrupt $FILE_NAME", e)
+        null
+    }
 
-            if (needsMigration) {
-                shift.copy(
-                    taxRateSnapshot = SettingsRepository.DEFAULT_TAX_RATE, // 0.057
-                    deliveryFeeSnapshot = SettingsRepository.DEFAULT_DELIVERY_FEE // 100.0
-                )
-            } else {
-                shift // Giữ nguyên nếu đã có snapshot values
+    /** Ghi ra file tam roi doi ten de file that khong bao gio bi ghi do dang. */
+    private fun writeAtomically(content: String) {
+        val tmp = File(dataDir, "$FILE_NAME.tmp")
+        tmp.outputStream().use { out ->
+            out.write(content.toByteArray())
+            out.fd.sync()
+        }
+        Files.move(
+            tmp.toPath(),
+            file.toPath(),
+            StandardCopyOption.REPLACE_EXISTING,
+            StandardCopyOption.ATOMIC_MOVE
+        )
+    }
+
+    @Serializable
+    private data class StoredShift(
+        val id: String = "",
+        val date: String = "",
+        val startTime: String = "",
+        val endTime: String = "",
+        val deliveryCount: Int = 0,
+        val plusGrossIncome: Double? = null,
+        val normalGrossIncome: Double? = null,
+        val plusMissionIncome: Double? = null,
+        val normalMissionIncome: Double? = null,
+        val plusTaxRateSnapshot: Double? = null,
+        val normalTaxRateSnapshot: Double? = null,
+        val deliveryFeeSnapshot: Double? = null,
+        val grossIncome: Double? = null,
+        val shiftType: String? = null,
+        val taxRateSnapshot: Double? = null
+    ) {
+        fun isLegacy(): Boolean = grossIncome != null || shiftType != null || taxRateSnapshot != null
+
+        fun toShift(): Shift {
+            val legacyIncome = grossIncome ?: 0.0
+            val legacyTaxRate = taxRateSnapshot ?: SettingsRepository.DEFAULT_TAX_RATE
+
+            val migratedPlusIncome = when {
+                plusGrossIncome != null -> plusGrossIncome
+                shiftType == "PLUS" -> legacyIncome
+                else -> 0.0
             }
+            val migratedNormalIncome = when {
+                normalGrossIncome != null -> normalGrossIncome
+                shiftType == "NORMAL" -> legacyIncome
+                shiftType == null -> legacyIncome
+                else -> 0.0
+            }
+
+            return Shift(
+                id = id.ifBlank { java.util.UUID.randomUUID().toString() },
+                date = date,
+                startTime = startTime,
+                endTime = endTime,
+                deliveryCount = deliveryCount,
+                plusGrossIncome = migratedPlusIncome,
+                normalGrossIncome = migratedNormalIncome,
+                plusMissionIncome = plusMissionIncome ?: 0.0,
+                normalMissionIncome = normalMissionIncome ?: 0.0,
+                plusTaxRateSnapshot = plusTaxRateSnapshot ?: legacyTaxRate,
+                normalTaxRateSnapshot = normalTaxRateSnapshot ?: legacyTaxRate,
+                deliveryFeeSnapshot = deliveryFeeSnapshot ?: SettingsRepository.DEFAULT_DELIVERY_FEE
+            )
         }
     }
-} 
+
+    companion object {
+        private const val TAG = "ShiftRepository"
+        private const val FILE_NAME = "shifts_data.json"
+    }
+}

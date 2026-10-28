@@ -1,108 +1,138 @@
 package com.example.shipperincome.ui.viewmodel
 
 import android.app.Application
-import androidx.compose.runtime.*
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.viewModelScope
 import com.example.shipperincome.data.repository.SettingsRepository
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.receiveAsFlow
+import java.math.BigDecimal
+import java.math.RoundingMode
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = SettingsRepository(application)
 
-    // State cho tax rate (tỷ lệ thuế)
-    var taxRateInput by mutableStateOf("")
-        private set
+    private val _messages = Channel<String>(Channel.BUFFERED)
+    val messages: Flow<String> = _messages.receiveAsFlow()
 
-    // State cho delivery fee (phí đơn hàng)
+    var plusTaxRateInput by mutableStateOf("")
+        private set
+    var normalTaxRateInput by mutableStateOf("")
+        private set
     var deliveryFeeInput by mutableStateOf("")
         private set
 
-    // State cho error messages
-    var taxRateError by mutableStateOf<String?>(null)
+    var plusTaxRateError by mutableStateOf<String?>(null)
+        private set
+    var normalTaxRateError by mutableStateOf<String?>(null)
         private set
     var deliveryFeeError by mutableStateOf<String?>(null)
         private set
 
-    // State để hiển thị confirmation dialog
     var showResetConfirmDialog by mutableStateOf(false)
         private set
+
+    /** True khi o nhap khac gia tri dang luu, de bat/tat nut Luu. */
+    val hasChanges: Boolean
+        get() = plusTaxRateInput != percentText(repository.getPlusTaxRate()) ||
+            normalTaxRateInput != percentText(repository.getNormalTaxRate()) ||
+            deliveryFeeInput != feeText(repository.getDeliveryFee())
 
     init {
         loadSettings()
     }
 
-    // Load settings từ repository
     private fun loadSettings() {
-        val taxRate = repository.getTaxRate()
-        val deliveryFee = repository.getDeliveryFee()
-
-        // Convert thành phần trăm và format cho UI với Locale US để dùng dấu chấm
-        taxRateInput = String.format(java.util.Locale.US, "%.1f", taxRate * 100) // Ví dụ: 5.7
-        deliveryFeeInput = deliveryFee.toInt().toString() // Ví dụ: 100
+        plusTaxRateInput = percentText(repository.getPlusTaxRate())
+        normalTaxRateInput = percentText(repository.getNormalTaxRate())
+        deliveryFeeInput = feeText(repository.getDeliveryFee())
     }
 
-    // Update tax rate input
-    fun updateTaxRateInput(value: String) {
-        taxRateInput = value.filter { it.isDigit() || it == '.' }
-        taxRateError = null // Clear error khi user nhập
+    /** 0.057 -> "5.7", 0.1 -> "10" (bo so 0 thua, toi da 3 chu so thap phan). */
+    private fun percentText(rate: Double): String =
+        BigDecimal(rate * 100).setScale(3, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString()
+
+    private fun feeText(fee: Double): String =
+        BigDecimal(fee).setScale(0, RoundingMode.HALF_UP).toPlainString()
+
+    fun updatePlusTaxRateInput(value: String) {
+        plusTaxRateInput = sanitizeDecimal(value)
+        plusTaxRateError = null
     }
 
-    // Update delivery fee input
+    fun updateNormalTaxRateInput(value: String) {
+        normalTaxRateInput = sanitizeDecimal(value)
+        normalTaxRateError = null
+    }
+
     fun updateDeliveryFeeInput(value: String) {
-        deliveryFeeInput = value.filter { it.isDigit() }
-        deliveryFeeError = null // Clear error khi user nhập
+        deliveryFeeInput = value.filter { it.isDigit() }.take(7)
+        deliveryFeeError = null
     }
 
-    // Validate và save settings
+    /** Chi giu chu so va mot dau thap phan; chap nhan ca dau phay. */
+    private fun sanitizeDecimal(value: String): String {
+        val normalized = value.replace(',', '.')
+        val sb = StringBuilder()
+        var hasDot = false
+        normalized.forEach { c ->
+            when {
+                c.isDigit() -> sb.append(c)
+                c == '.' && !hasDot -> { sb.append(c); hasDot = true }
+            }
+        }
+        return sb.toString().take(6)
+    }
+
     fun saveSettings() {
         var hasError = false
 
-        // Validate tax rate
-        val taxRate = taxRateInput.toDoubleOrNull()
-        if (taxRate == null || taxRate < 0 || taxRate > 100) {
-            taxRateError = "Thuế phải từ 0% đến 100%"
+        val plusTaxRate = plusTaxRateInput.toDoubleOrNull()
+        if (plusTaxRate == null || plusTaxRate < 0 || plusTaxRate > 100) {
+            plusTaxRateError = "Thuế Plus phải từ 0% đến 100%"
             hasError = true
         }
 
-        // Validate delivery fee
+        val normalTaxRate = normalTaxRateInput.toDoubleOrNull()
+        if (normalTaxRate == null || normalTaxRate < 0 || normalTaxRate > 100) {
+            normalTaxRateError = "Thuế thường phải từ 0% đến 100%"
+            hasError = true
+        }
+
         val deliveryFee = deliveryFeeInput.toDoubleOrNull()
         if (deliveryFee == null || deliveryFee < 0) {
             deliveryFeeError = "Phí đơn hàng phải là số không âm"
             hasError = true
         }
 
-        if (hasError) return
+        if (hasError || plusTaxRate == null || normalTaxRate == null || deliveryFee == null) return
 
-        // Save to repository
-        viewModelScope.launch {
-            repository.setTaxRate(taxRate!! / 100.0) // Convert từ % về decimal
-            repository.setDeliveryFee(deliveryFee!!)
-        }
+        repository.setPlusTaxRate(plusTaxRate / 100.0)
+        repository.setNormalTaxRate(normalTaxRate / 100.0)
+        repository.setDeliveryFee(deliveryFee)
+        loadSettings()
+        _messages.trySend("Đã lưu cài đặt. Áp dụng cho ca làm mới.")
     }
 
-    // Show reset confirmation dialog
     fun showResetDialog() {
         showResetConfirmDialog = true
     }
 
-    // Hide reset confirmation dialog
     fun hideResetDialog() {
         showResetConfirmDialog = false
     }
 
-    // Reset về giá trị mặc định
     fun resetToDefaults() {
-        viewModelScope.launch {
-            repository.resetToDefaults()
-            loadSettings() // Reload UI
-            hideResetDialog()
-        }
-    }
-
-    // Get current settings để sử dụng trong các ViewModel khác
-    fun getCurrentSettings(): Pair<Double, Double> {
-        return Pair(repository.getTaxRate(), repository.getDeliveryFee())
+        repository.resetToDefaults()
+        loadSettings()
+        plusTaxRateError = null
+        normalTaxRateError = null
+        deliveryFeeError = null
+        hideResetDialog()
+        _messages.trySend("Đã khôi phục mặc định.")
     }
 }

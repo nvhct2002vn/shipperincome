@@ -1,259 +1,293 @@
 package com.example.shipperincome.ui.screen
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.*
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.RestartAlt
-import androidx.compose.material.icons.filled.Save
-import androidx.compose.material.icons.filled.Warning
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.outlined.Backup
+import androidx.compose.material.icons.outlined.Calculate
+import androidx.compose.material.icons.outlined.FileDownload
+import androidx.compose.material.icons.outlined.FileUpload
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Percent
+import androidx.compose.material.icons.outlined.Restore
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.shipperincome.ui.theme.*
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.shipperincome.BuildConfig
+import com.example.shipperincome.ui.components.HeroHeader
+import com.example.shipperincome.ui.components.LocalSnackbarHostState
+import com.example.shipperincome.ui.components.MetricRow
+import com.example.shipperincome.ui.components.SectionCard
+import com.example.shipperincome.ui.components.ThousandsSeparatorTransformation
+import com.example.shipperincome.ui.theme.AppTheme
 import com.example.shipperincome.ui.viewmodel.SettingsViewModel
+import com.example.shipperincome.ui.viewmodel.ShiftViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.time.LocalDate
 
 @Composable
-fun SettingsScreen(settingsViewModel: SettingsViewModel = viewModel()) {
+fun SettingsScreen(settingsViewModel: SettingsViewModel, shiftViewModel: ShiftViewModel) {
+    val context = LocalContext.current
+    val snackbar = LocalSnackbarHostState.current
+    val focusManager = LocalFocusManager.current
+    val scope = rememberCoroutineScope()
+    val shifts by shiftViewModel.allShifts.collectAsStateWithLifecycle()
 
-    // Keyboard controller để ẩn bàn phím
-    val keyboardController = LocalSoftwareKeyboardController.current
+    LaunchedEffect(settingsViewModel) {
+        settingsViewModel.messages.collect { snackbar.showSnackbar(it, withDismissAction = true) }
+    }
+    LaunchedEffect(shiftViewModel) {
+        shiftViewModel.messages.collect { msg ->
+            val result = snackbar.showSnackbar(msg.text, msg.actionLabel, withDismissAction = msg.actionLabel == null)
+            if (result == SnackbarResult.ActionPerformed) msg.onAction?.invoke()
+        }
+    }
 
-    // Gradient Background giống với các screen khác
-    val gradientBrush = Brush.verticalGradient(colors = listOf(GreenStart, GreenEnd))
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val json = shiftViewModel.exportShiftsJson()
+            val ok = withContext(Dispatchers.IO) {
+                runCatching {
+                    context.contentResolver.openOutputStream(uri)?.use { it.write(json.toByteArray()) }
+                        ?: error("no stream")
+                }.isSuccess
+            }
+            snackbar.showSnackbar(if (ok) "Đã sao lưu ${shifts.size} ca làm." else "Không ghi được file sao lưu.")
+        }
+    }
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val raw = withContext(Dispatchers.IO) {
+                runCatching {
+                    context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                }.getOrNull()
+            }
+            if (raw == null) snackbar.showSnackbar("Không đọc được file.")
+            else shiftViewModel.importShiftsJson(raw)
+        }
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(brush = gradientBrush)
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .imePadding()
+            .verticalScroll(rememberScrollState())
+            .padding(bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        val onHero = AppTheme.extended.onHero
+        HeroHeader {
+            Text("Cài đặt", style = MaterialTheme.typography.titleLarge, color = onHero)
+            Text(
+                "Thông số tính tiền và sao lưu dữ liệu",
+                style = MaterialTheme.typography.bodyMedium,
+                color = onHero.copy(alpha = 0.8f)
+            )
+        }
 
-        // Header
-        Text(
-            "Cài Đặt",
-            style = MaterialTheme.typography.h4,
-            fontWeight = FontWeight.Bold,
-            color = Color.White,
-            modifier = Modifier.padding(vertical = 16.dp)
-        )
-
-
-        // Settings Card
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 8.dp),
-            elevation = 4.dp,
-            backgroundColor = Beige.copy(alpha = 0.9f)
+        SectionCard(
+            modifier = Modifier.padding(horizontal = 16.dp),
+            title = "Thông số tính toán",
+            icon = Icons.Outlined.Tune
         ) {
-            Column(
-                modifier = Modifier.padding(20.dp)
-            ) {
-                Text(
-                    "Thông Số Tính Toán",
-                    style = MaterialTheme.typography.h6,
-                    color = Brown,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(bottom = 16.dp)
-                )
-
-                // Tax Rate Input
-                Text(
-                    "Tỷ lệ thuế (%)",
-                    color = Brown,
-                    fontWeight = FontWeight.Medium,
-                    fontSize = 14.sp,
-                    modifier = Modifier.padding(bottom = 4.dp)
-                )
-
-                OutlinedTextField(
-                    value = settingsViewModel.taxRateInput,
-                    onValueChange = { value -> settingsViewModel.updateTaxRateInput(value) },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    colors = TextFieldDefaults.outlinedTextFieldColors(
-                        focusedBorderColor = Brown,
-                        unfocusedBorderColor = Brown.copy(alpha = 0.5f),
-                        textColor = Color.DarkGray,
-                        focusedLabelColor = Brown,
-                        unfocusedLabelColor = Brown.copy(alpha = 0.7f)
-                    ),
-                    placeholder = { Text("5.7", color = Color.Gray) },
-                    trailingIcon = { Text("%", color = Brown) }
-                )
-
-                // Error message for tax rate
-                if (settingsViewModel.taxRateError != null) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(top = 4.dp)
-                    ) {
-                        Icon(Icons.Default.Warning, contentDescription = "Lỗi", tint = Color.Red, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text(settingsViewModel.taxRateError!!, color = Color.Red, fontSize = 12.sp)
-                    }
-                }
-
-                Spacer(Modifier.height(16.dp))
-
-                // Delivery Fee Input
-                Text(
-                    "Phí mỗi đơn hàng (₩)",
-                    color = Brown,
-                    fontWeight = FontWeight.Medium,
-                    fontSize = 14.sp,
-                    modifier = Modifier.padding(bottom = 4.dp)
-                )
-
-                OutlinedTextField(
-                    value = settingsViewModel.deliveryFeeInput,
-                    onValueChange = { value -> settingsViewModel.updateDeliveryFeeInput(value) },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    colors = TextFieldDefaults.outlinedTextFieldColors(
-                        focusedBorderColor = Brown,
-                        unfocusedBorderColor = Brown.copy(alpha = 0.5f),
-                        textColor = Color.DarkGray,
-                        focusedLabelColor = Brown,
-                        unfocusedLabelColor = Brown.copy(alpha = 0.7f)
-                    ),
-                    placeholder = { Text("100", color = Color.Gray) },
-                    trailingIcon = { Text("₩", color = Brown) }
-                )
-
-                // Error message for delivery fee
-                if (settingsViewModel.deliveryFeeError != null) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(top = 4.dp)
-                    ) {
-                        Icon(Icons.Default.Warning, contentDescription = "Lỗi", tint = Color.Red, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text(settingsViewModel.deliveryFeeError!!, color = Color.Red, fontSize = 12.sp)
-                    }
-                }
-
-                Spacer(Modifier.height(24.dp))
-
-                // Buttons Row
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly
+            Text(
+                "Áp dụng cho ca làm mới hoặc khi bạn sửa lại ca đã có; ca cũ giữ nguyên giá trị đã lưu tại thời điểm nhập.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+            SettingField(
+                value = settingsViewModel.plusTaxRateInput,
+                onValueChange = settingsViewModel::updatePlusTaxRateInput,
+                label = "Thuế Plus",
+                suffix = "%",
+                error = settingsViewModel.plusTaxRateError,
+                keyboardType = KeyboardType.Decimal
+            )
+            Spacer(Modifier.height(12.dp))
+            SettingField(
+                value = settingsViewModel.normalTaxRateInput,
+                onValueChange = settingsViewModel::updateNormalTaxRateInput,
+                label = "Thuế thường",
+                suffix = "%",
+                error = settingsViewModel.normalTaxRateError,
+                keyboardType = KeyboardType.Decimal
+            )
+            Spacer(Modifier.height(12.dp))
+            SettingField(
+                value = settingsViewModel.deliveryFeeInput,
+                onValueChange = settingsViewModel::updateDeliveryFeeInput,
+                label = "Phí mỗi đơn Plus",
+                suffix = "₩",
+                error = settingsViewModel.deliveryFeeError,
+                keyboardType = KeyboardType.Number,
+                money = true,
+                imeAction = ImeAction.Done
+            )
+            Spacer(Modifier.height(20.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedButton(
+                    onClick = settingsViewModel::showResetDialog,
+                    modifier = Modifier.weight(1f)
                 ) {
-                    // Save Button
-                    Button(
-                        onClick = {
-                            keyboardController?.hide()
-                            settingsViewModel.saveSettings()
-                        },
-                        colors = ButtonDefaults.buttonColors(backgroundColor = Brown),
-                        elevation = ButtonDefaults.elevation(defaultElevation = 4.dp)
-                    ) {
-                        Icon(Icons.Default.Save, contentDescription = "Lưu", tint = Color.White)
-                        Spacer(Modifier.width(4.dp))
-                        Text("LƯU", color = Color.White, fontWeight = FontWeight.Bold)
-                    }
-
-                    // Reset Button
-                    Button(
-                        onClick = { settingsViewModel.showResetDialog() },
-                        colors = ButtonDefaults.buttonColors(backgroundColor = Color.Gray),
-                        elevation = ButtonDefaults.elevation(defaultElevation = 4.dp)
-                    ) {
-                        Icon(Icons.Default.RestartAlt, contentDescription = "Khôi phục", tint = Color.White)
-                        Spacer(Modifier.width(4.dp))
-                        Text("KHÔI PHỤC", color = Color.White, fontWeight = FontWeight.Bold)
-                    }
+                    Icon(Icons.Outlined.Restore, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Mặc định")
+                }
+                Button(
+                    onClick = {
+                        focusManager.clearFocus()
+                        settingsViewModel.saveSettings()
+                    },
+                    enabled = settingsViewModel.hasChanges,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Filled.Check, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Lưu")
                 }
             }
         }
 
-        Spacer(Modifier.height(16.dp))
-
-        // Help/Info Card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            elevation = 4.dp,
-            backgroundColor = Brown.copy(alpha = 0.9f)
+        SectionCard(
+            modifier = Modifier.padding(horizontal = 16.dp),
+            title = "Cách tính thực nhận",
+            icon = Icons.Outlined.Calculate
         ) {
-            Column(
-                modifier = Modifier.padding(20.dp)
-            ) {
-                Text(
-                    "Hướng dẫn",
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
-                    modifier = Modifier.padding(bottom = 12.dp)
-                )
-                Text(
-                    "• Tỷ lệ thuế: Phần trăm thuế được trừ từ thu nhập gộp",
-                    color = Color.White,
-                    fontSize = 14.sp,
-                    modifier = Modifier.padding(bottom = 4.dp)
-                )
-                Text(
-                    "• Phí đơn hàng: Số tiền bị trừ cho mỗi đơn hàng (chỉ áp dụng cho ca Plus)",
-                    color = Color.White,
-                    fontSize = 14.sp,
-                    modifier = Modifier.padding(bottom = 4.dp)
-                )
-                Text(
-                    "• Giá trị mặc định: Thuế 5.7%, Phí đơn hàng 100₩",
-                    color = Color.White,
-                    fontSize = 14.sp
-                )
+            FormulaLine("Plus", "(Thu nhập + nhiệm vụ − số đơn × phí đơn) × (1 − thuế Plus)")
+            Spacer(Modifier.height(8.dp))
+            FormulaLine("Thường", "(Thu nhập + nhiệm vụ) × (1 − thuế thường)")
+        }
+
+        SectionCard(
+            modifier = Modifier.padding(horizontal = 16.dp),
+            title = "Sao lưu ca làm",
+            icon = Icons.Outlined.Backup
+        ) {
+            Text(
+                "Lưu toàn bộ ca làm ra file JSON (Drive, Downloads...) để chuyển máy hoặc phòng khi mất dữ liệu. Khôi phục sẽ gộp với dữ liệu hiện có.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(12.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                FilledTonalButton(
+                    onClick = { exportLauncher.launch("quickearn-backup-${LocalDate.now()}.json") },
+                    enabled = shifts.isNotEmpty(),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Outlined.FileUpload, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Sao lưu")
+                }
+                OutlinedButton(
+                    onClick = { importLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Outlined.FileDownload, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Khôi phục")
+                }
             }
+        }
+
+        SectionCard(
+            modifier = Modifier.padding(horizontal = 16.dp),
+            title = "Thông tin",
+            icon = Icons.Outlined.Info
+        ) {
+            MetricRow("Phiên bản", BuildConfig.VERSION_NAME)
+            HorizontalDivider(Modifier.padding(vertical = 4.dp))
+            MetricRow("Số ca đã lưu", "${shifts.size}")
         }
     }
 
-    // Reset Confirmation Dialog
     if (settingsViewModel.showResetConfirmDialog) {
         AlertDialog(
-            onDismissRequest = { settingsViewModel.hideResetDialog() },
-            title = {
-                Text(
-                    "Khôi phục về mặc định",
-                    fontWeight = FontWeight.Bold,
-                    color = Brown
-                )
-            },
-            text = {
-                Text(
-                    "Bạn có chắc muốn khôi phục về giá trị mặc định?\n\n• Thuế: 5.7%\n• Phí đơn hàng: 100₩",
-                    color = Color.White
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = { settingsViewModel.resetToDefaults() },
-                    colors = ButtonDefaults.buttonColors(backgroundColor = Brown)
-                ) {
-                    Text("KHÔI PHỤC", color = Color.White, fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                Button(
-                    onClick = { settingsViewModel.hideResetDialog() },
-                    colors = ButtonDefaults.buttonColors(backgroundColor = Color.Gray)
-                ) {
-                    Text("HỦY", color = Color.White)
-                }
-            }
+            onDismissRequest = settingsViewModel::hideResetDialog,
+            icon = { Icon(Icons.Outlined.Restore, contentDescription = null) },
+            title = { Text("Khôi phục mặc định?") },
+            text = { Text("Thuế Plus và thuế thường về 5.7%, phí đơn về 100₩. Ca làm đã lưu không bị ảnh hưởng.") },
+            confirmButton = { Button(onClick = settingsViewModel::resetToDefaults) { Text("Khôi phục") } },
+            dismissButton = { TextButton(onClick = settingsViewModel::hideResetDialog) { Text("Hủy") } }
         )
+    }
+}
+
+@Composable
+private fun SettingField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    suffix: String,
+    error: String?,
+    keyboardType: KeyboardType,
+    money: Boolean = false,
+    imeAction: ImeAction = ImeAction.Next
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label) },
+        leadingIcon = if (!money) { { Icon(Icons.Outlined.Percent, null) } } else null,
+        suffix = { Text(suffix) },
+        isError = error != null,
+        supportingText = error?.let { { Text(it) } },
+        singleLine = true,
+        visualTransformation = if (money) ThousandsSeparatorTransformation else androidx.compose.ui.text.input.VisualTransformation.None,
+        keyboardOptions = KeyboardOptions(keyboardType = keyboardType, imeAction = imeAction),
+        shape = MaterialTheme.shapes.small,
+        modifier = Modifier.fillMaxWidth()
+    )
+}
+
+@Composable
+private fun FormulaLine(label: String, formula: String) {
+    Column {
+        Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        Text(formula, style = MaterialTheme.typography.bodyMedium)
     }
 }

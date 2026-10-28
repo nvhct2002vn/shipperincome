@@ -1,675 +1,712 @@
 package com.example.shipperincome.ui.screen
 
-import android.app.DatePickerDialog
-import android.app.TimePickerDialog
-import android.widget.DatePicker
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CalendarToday
-import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Warning // Icon cho lỗi
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.EmojiEvents
+import androidx.compose.material.icons.outlined.EventBusy
+import androidx.compose.material.icons.outlined.ExpandLess
+import androidx.compose.material.icons.outlined.ExpandMore
+import androidx.compose.material.icons.outlined.Inventory2
+import androidx.compose.material.icons.outlined.Payments
+import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.WbTwilight
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.Surface
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.Text
+import androidx.compose.material3.rememberSwipeToDismissBoxState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.navigation.NavHostController // Import NavController
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.shipperincome.data.model.Shift
-import com.example.shipperincome.data.model.ShiftType
-import com.example.shipperincome.ui.theme.* // Import Theme colors
+import com.example.shipperincome.ui.components.ColorDot
+import com.example.shipperincome.ui.components.EmptyState
+import com.example.shipperincome.ui.components.ErrorBanner
+import com.example.shipperincome.ui.components.HeroHeader
+import com.example.shipperincome.ui.components.HeroStat
+import com.example.shipperincome.ui.components.LocalSnackbarHostState
+import com.example.shipperincome.ui.components.MetricRow
+import com.example.shipperincome.ui.components.MoneyField
+import com.example.shipperincome.ui.components.PickerField
+import com.example.shipperincome.ui.components.SectionCard
+import com.example.shipperincome.ui.components.SingleDatePickerDialog
+import com.example.shipperincome.ui.components.TimePickerDialog
+import com.example.shipperincome.ui.theme.AppTheme
 import com.example.shipperincome.ui.viewmodel.DailySummary
 import com.example.shipperincome.ui.viewmodel.ShiftViewModel
+import com.example.shipperincome.utils.DateWithWeekday
+import com.example.shipperincome.utils.TimeHm
+import com.example.shipperincome.utils.formatCurrency
+import com.example.shipperincome.utils.formatDuration
+import com.example.shipperincome.utils.formatDurationShort
+import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.LocalTime
-import java.time.format.DateTimeFormatter
-import java.util.Calendar
-import java.util.Locale
-import java.text.NumberFormat
-import java.lang.Math
-import com.example.shipperincome.utils.FormatDuration
 
 @Composable
-fun InputScreen(viewModel: ShiftViewModel, navController: NavHostController) { // Nhận NavController
-
-    // Correctly accessing state objects using collectAsState() and State delegation
+fun InputScreen(viewModel: ShiftViewModel) {
+    val shiftsForDay by viewModel.shiftsForSelectedDate.collectAsStateWithLifecycle()
+    val dailySummary by viewModel.dailySummary.collectAsStateWithLifecycle()
     val selectedDate = viewModel.selectedDate
-    val shiftsForDay by viewModel.shiftsForSelectedDate.collectAsState()
-    val dailySummary by viewModel.dailySummary.collectAsState()
-    val editingShiftId = viewModel.editingShiftId
-    val inputError = viewModel.inputError // Lấy trạng thái lỗi
 
-    var showDeleteConfirmDialog by remember { mutableStateOf<String?>(null) }
-    var selectedTab by remember { mutableStateOf(0) } // State cho tab selection
+    val snackbar = LocalSnackbarHostState.current
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    val focusManager = LocalFocusManager.current
 
-    val context = LocalContext.current
-    val keyboardController = LocalSoftwareKeyboardController.current
-    val calendar = Calendar.getInstance()
+    var showDatePicker by remember { mutableStateOf(false) }
+    var timePickerFor by remember { mutableStateOf<Boolean?>(null) } // true = bat dau, false = ket thuc
 
-    // Định dạng ngày tháng
-    val dateFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy", Locale("vi", "VN"))
-    val timeFormatter = DateTimeFormatter.ofPattern("HH:mm")
-
-    // Hàm hiển thị DatePickerDialog
-    val showDatePicker = {
-        calendar.timeInMillis = System.currentTimeMillis() // Cập nhật calendar về ngày hiện tại
-        val currentYear = selectedDate.year
-        val currentMonth = selectedDate.monthValue - 1 // Calendar month is 0-based
-        val currentDay = selectedDate.dayOfMonth
-
-        DatePickerDialog(
-            context,
-            { _: DatePicker, year: Int, month: Int, dayOfMonth: Int ->
-                viewModel.changeSelectedDate(LocalDate.of(year, month + 1, dayOfMonth))
-            },
-            currentYear, currentMonth, currentDay
-        ).show()
-    }
-
-    // Hàm hiển thị TimePickerDialog
-    val showTimePicker = { isStartTime: Boolean ->
-        val currentTimeString =
-            if (isStartTime) viewModel.startTimeInput else viewModel.endTimeInput
-        var initialHour: Int
-        var initialMinute: Int
-        try {
-            val parsedTime = LocalTime.parse(currentTimeString, timeFormatter)
-            initialHour = parsedTime.hour
-            initialMinute = parsedTime.minute
-        } catch (e: Exception) {
-            // Lấy giờ hiện tại nếu parse lỗi hoặc input rỗng
-            val now = LocalTime.now()
-            initialHour = now.hour
-            initialMinute = now.minute
+    LaunchedEffect(viewModel) {
+        viewModel.messages.collect { msg ->
+            val result = snackbar.showSnackbar(
+                message = msg.text,
+                actionLabel = msg.actionLabel,
+                withDismissAction = msg.actionLabel == null,
+                duration = if (msg.actionLabel != null) SnackbarDuration.Long else SnackbarDuration.Short
+            )
+            if (result == SnackbarResult.ActionPerformed) msg.onAction?.invoke()
         }
-
-        TimePickerDialog(
-            context,
-            { _, hour: Int, minute: Int ->
-                val selectedTime = LocalTime.of(hour, minute)
-                if (isStartTime) {
-                    viewModel.startTimeInput = selectedTime.format(timeFormatter)
-                } else {
-                    viewModel.endTimeInput = selectedTime.format(timeFormatter)
-                }
-            },
-            initialHour, initialMinute, true // true = 24 giờ format
-        ).show()
     }
 
-    // Gradient Background
-    val gradientBrush = Brush.verticalGradient(colors = listOf(GreenStart, GreenEnd))
-
-    Column(
+    LazyColumn(
+        state = listState,
         modifier = Modifier
             .fillMaxSize()
-            .background(brush = gradientBrush)
-            .padding(16.dp)
+            .imePadding(),
+        contentPadding = PaddingValues(bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // 1. Chọn Ngày
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 8.dp)
-        ) {
-            Text(
-                "Ngày làm việc:",
-                fontWeight = FontWeight.Bold,
-                color = Color.White,
-                fontSize = 16.sp
+        item(key = "header") {
+            DayHeader(
+                date = selectedDate,
+                summary = dailySummary,
+                onPrev = { viewModel.changeSelectedDate(selectedDate.minusDays(1)) },
+                onNext = { viewModel.changeSelectedDate(selectedDate.plusDays(1)) },
+                onPickDate = { showDatePicker = true },
+                onToday = { viewModel.changeSelectedDate(LocalDate.now()) }
             )
-            Spacer(Modifier.weight(1f)) // Đẩy nút sang phải
-            Button(
-                onClick = showDatePicker,
-                colors = ButtonDefaults.buttonColors(backgroundColor = Beige.copy(alpha = 0.8f))
+        }
+
+        item(key = "form") {
+            ShiftForm(
+                viewModel = viewModel,
+                onPickStart = { timePickerFor = true },
+                onPickEnd = { timePickerFor = false },
+                onSave = {
+                    focusManager.clearFocus()
+                    viewModel.addOrUpdateShift()
+                },
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
+        }
+
+        item(key = "list_title") {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.Default.CalendarToday, contentDescription = "Chọn ngày", tint = Brown)
-                Spacer(Modifier.width(4.dp))
                 Text(
-                    selectedDate.format(dateFormatter),
-                    color = Brown,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
-        }
-
-        // 2. Form Nhập/Sửa Ca Làm
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            elevation = 4.dp,
-            backgroundColor = Beige.copy(alpha = 0.9f)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    if (editingShiftId == null) "Thêm Ca Làm Mới" else "Sửa Ca Làm",
-                    style = MaterialTheme.typography.h6,
-                    color = Brown,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(Modifier.height(10.dp))
-
-                // Hiển thị lỗi nếu có
-                if (inputError != null) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    ) {
-                        Icon(Icons.Default.Warning, contentDescription = "Lỗi", tint = Color.Red)
-                        Spacer(Modifier.width(4.dp))
-                        Text(inputError, color = Color.Red, fontSize = 14.sp)
-                    }
-                }
-
-                // Radio buttons cho loại ca làm việc - cùng hàng và compact
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        "Loại ca:",
-                        color = Brown,
-                        fontWeight = FontWeight.Medium,
-                        fontSize = 14.sp,
-                        modifier = Modifier.padding(end = 16.dp)
-                    )
-
-                    // Radio button cho ca Plus
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.clickable {
-                            viewModel.selectedShiftType = ShiftType.PLUS
-                        }
-                    ) {
-                        RadioButton(
-                            selected = viewModel.selectedShiftType == ShiftType.PLUS,
-                            onClick = { viewModel.selectedShiftType = ShiftType.PLUS },
-                            colors = RadioButtonDefaults.colors(
-                                selectedColor = Brown,
-                                unselectedColor = Brown.copy(alpha = 0.6f)
-                            )
-                        )
-                        Text(
-                            "Plus",
-                            color = Brown,
-                            fontSize = 14.sp,
-                            modifier = Modifier.padding(start = 2.dp, end = 16.dp)
-                        )
-                    }
-
-                    // Radio button cho ca Thường
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.clickable {
-                            viewModel.selectedShiftType = ShiftType.NORMAL
-                            viewModel.deliveryCountInput = "" // Clear delivery count khi đổi sang NORMAL
-                        }
-                    ) {
-                        RadioButton(
-                            selected = viewModel.selectedShiftType == ShiftType.NORMAL,
-                            onClick = {
-                                viewModel.selectedShiftType = ShiftType.NORMAL
-                                viewModel.deliveryCountInput = ""
-                            },
-                            colors = RadioButtonDefaults.colors(
-                                selectedColor = Brown,
-                                unselectedColor = Brown.copy(alpha = 0.6f)
-                            )
-                        )
-                        Text(
-                            "Thường",
-                            color = Brown,
-                            fontSize = 14.sp,
-                            modifier = Modifier.padding(start = 2.dp)
-                        )
-                    }
-                }
-                Spacer(Modifier.height(12.dp))
-
-                // Ô nhập số đơn hàng (chỉ hiện khi chọn Plus)
-                if (viewModel.selectedShiftType == ShiftType.PLUS) {
-                    OutlinedTextField(
-                        value = viewModel.deliveryCountInput,
-                        onValueChange = {
-                            viewModel.deliveryCountInput = it.filter { char -> char.isDigit() }
-                        },
-                        label = { Text("Số đơn hàng") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 8.dp),
-                        singleLine = true,
-                        colors = TextFieldDefaults.outlinedTextFieldColors(
-                            focusedBorderColor = Brown,
-                            unfocusedBorderColor = Brown.copy(alpha = 0.5f),
-                            textColor = Color.DarkGray,
-                            focusedLabelColor = Brown,
-                            unfocusedLabelColor = Brown.copy(alpha = 0.7f)
-                        ),
-                        placeholder = { Text("0", color = Color.Gray) }
-                    )
-                }
-
-                // Ô nhập giờ bắt đầu, kết thúc, thu nhập
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    TimeInput(
-                        label = "Bắt đầu",
-                        value = viewModel.startTimeInput,
-                        onClick = { showTimePicker(true) },
-                        modifier = Modifier.weight(1f)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    TimeInput(
-                        label = "Kết thúc",
-                        value = viewModel.endTimeInput,
-                        onClick = { showTimePicker(false) },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = viewModel.incomeInput,
-                    onValueChange = {
-                        viewModel.incomeInput = it.filter { char -> char.isDigit() }
-                    },
-                    label = { Text("Thu nhập (Trước trừ thuế)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    colors = TextFieldDefaults.outlinedTextFieldColors(
-                        focusedBorderColor = Brown,
-                        unfocusedBorderColor = Brown.copy(alpha = 0.5f),
-                        textColor = Color.DarkGray,
-                        focusedLabelColor = Brown,
-                        unfocusedLabelColor = Brown.copy(alpha = 0.7f)
-                    ),
-                    placeholder = { Text("0", color = Color.Gray) }
-                )
-                Spacer(Modifier.height(16.dp))
-                // Nút Lưu / Hủy sửa
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly
-                ) {
-                    Button(
-                        onClick = {
-                            keyboardController?.hide()
-                            viewModel.addOrUpdateShift()
-                        },
-                        colors = ButtonDefaults.buttonColors(backgroundColor = Brown),
-                        elevation = ButtonDefaults.elevation(defaultElevation = 4.dp)
-                    ) {
-                        Text(
-                            if (editingShiftId == null) "LƯU CA LÀM" else "LƯU THAY ĐỔI",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                    // Nút Hủy chỉ hiển thị khi đang sửa
-                    if (editingShiftId != null) {
-                        Button(
-                            onClick = { viewModel.clearInputs() },
-                            colors = ButtonDefaults.buttonColors(backgroundColor = Color.Gray),
-                            elevation = ButtonDefaults.elevation(defaultElevation = 4.dp)
-                        ) {
-                            Text("HỦY SỬA", color = Color.White, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-            }
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        // 3. TabRow để chuyển đổi giữa "Các ca đã nhập" và "Thống kê ngày"
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            elevation = 4.dp,
-            backgroundColor = Color.Transparent
-        ) {
-            TabRow(
-                selectedTabIndex = selectedTab,
-                backgroundColor = Brown.copy(alpha = 0.9f),
-                contentColor = Color.White,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-            Tab(
-                selected = selectedTab == 0,
-                onClick = { selectedTab = 0 },
-                text = {
-                    Text(
-                        "Các Ca Đã Nhập",
-                        fontSize = 14.sp,
-                        fontWeight = if (selectedTab == 0) FontWeight.Bold else FontWeight.Normal
-                    )
-                }
-            )
-            Tab(
-                selected = selectedTab == 1,
-                onClick = { selectedTab = 1 },
-                text = {
-                    Text(
-                        "Thống Kê Ngày",
-                        fontSize = 14.sp,
-                        fontWeight = if (selectedTab == 1) FontWeight.Bold else FontWeight.Normal
-                    )
-                }
-            )
-            }
-        }
-
-        Spacer(Modifier.height(8.dp))
-
-        // 4. Nội dung tab được chọn
-        when (selectedTab) {
-            0 -> {
-                // Tab "Các Ca Đã Nhập"
-                ShiftsListTab(
-                    shiftsForDay = shiftsForDay,
-                    onEditClick = { shift -> viewModel.startEditing(shift) },
-                    onDeleteClick = { shiftId -> showDeleteConfirmDialog = shiftId },
+                    "Ca làm trong ngày",
+                    style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.weight(1f)
                 )
-            }
-            1 -> {
-                // Tab "Thống Kê Ngày"
-                DailyStatsTab(
-                    dailySummary = dailySummary,
-                    shiftsForDay = shiftsForDay,
-                    dateFormatter = dateFormatter,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-        }
-    } // End Column Chính
-
-    // Dialog Xác nhận Xóa
-    if (showDeleteConfirmDialog != null) {
-        AlertDialog(
-            onDismissRequest = { showDeleteConfirmDialog = null },
-            title = { Text("Xác nhận xóa", fontWeight = FontWeight.Bold) },
-            text = { Text("Bạn có chắc muốn xóa ca làm này?") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        viewModel.deleteShift(showDeleteConfirmDialog!!)
-                        showDeleteConfirmDialog = null
-                    },
-                    colors = ButtonDefaults.buttonColors(backgroundColor = Color.Red)
-                ) { Text("XÓA", color = Color.White) }
-            },
-            dismissButton = {
-                Button(onClick = { showDeleteConfirmDialog = null }) {
-                    Text("Hủy")
-                }
-            }
-        )
-    }
-}
-
-// Composable cho ô nhập thời gian có thể bấm được
-@Composable
-fun TimeInput(label: String, value: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = {}, // Không cho sửa trực tiếp
-        label = { Text(label) },
-        modifier = modifier.clickable(onClick = onClick), // Click vào là gọi TimePicker
-        readOnly = true, // Ngăn bàn phím hiện lên
-        enabled = false, // Vô hiệu hóa nhưng vẫn nhận click
-        colors = TextFieldDefaults.outlinedTextFieldColors(
-            disabledTextColor = Color.DarkGray, // Màu text khi disabled
-            disabledBorderColor = Brown.copy(alpha = 0.5f),
-            disabledLabelColor = Brown.copy(alpha = 0.7f),
-            backgroundColor = Color.Transparent // Để hiệu ứng click rõ hơn
-        )
-    )
-}
-
-
-// Composable cho một item ca làm trong danh sách
-@Composable
-fun ShiftItem(shift: Shift, onEditClick: () -> Unit, onDeleteClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 10.dp, horizontal = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            // Dòng đầu: Chỉ thời gian, không có badge để tránh nhảy dòng
-            Text(
-                "${shift.startTime} - ${shift.endTime} (${FormatDuration(shift.calculateDurationHours())})",
-                fontWeight = FontWeight.Bold,
-                color = Color.White,
-                fontSize = 15.sp
-            )
-            Spacer(Modifier.height(2.dp))
-
-            // Hiển thị số đơn nếu là ca Plus
-            if (shift.shiftType == ShiftType.PLUS && shift.deliveryCount > 0) {
-                Text(
-                    "Số đơn: ${shift.deliveryCount}",
-                    color = Beige.copy(alpha = 0.9f),
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium
-                )
-                Spacer(Modifier.height(2.dp))
-            }
-
-            Text(
-                "Thu nhập: ${formatCurrency(shift.grossIncome)}",
-                color = Beige,
-                fontSize = 14.sp
-            )
-            Text(
-                "Ròng: ${formatCurrency(shift.calculateNetIncome())} (TB: ${formatCurrency(shift.calculateHourlyRate())}/h)",
-                color = Beige.copy(alpha = 0.8f),
-                fontSize = 12.sp
-            )
-        }
-        // Badge Plus và Nút Sửa/Xóa
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            // Badge cho loại ca Plus
-            if (shift.shiftType == ShiftType.PLUS) {
-                Card(
-                    backgroundColor = Color.Red.copy(alpha = 0.8f),
-                    modifier = Modifier.padding(end = 8.dp)
-                ) {
+                if (shiftsForDay.isNotEmpty()) {
                     Text(
-                        "PLUS",
-                        color = Color.White,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                        "Vuốt trái để xóa",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
-
-            // Nút Sửa và Xóa
-            IconButton(onClick = onEditClick, modifier = Modifier.size(40.dp)) {
-                Icon(
-                    Icons.Default.Edit,
-                    contentDescription = "Sửa",
-                    tint = Beige.copy(alpha = 0.9f)
-                )
-            }
-            IconButton(onClick = onDeleteClick, modifier = Modifier.size(40.dp)) {
-                Icon(
-                    Icons.Default.Delete,
-                    contentDescription = "Xóa",
-                    tint = RedDark.copy(alpha = 0.8f)
-                )
-            }
         }
-    }
-}
 
-// Composable cho Card tổng kết ngày
-@Composable
-fun DailySummaryCard(summary: DailySummary, dateFormatter: DateTimeFormatter) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        elevation = 4.dp,
-        backgroundColor = Brown.copy(alpha = 0.9f)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                "Tổng kết ngày: ${summary.date.format(dateFormatter)}",
-                style = MaterialTheme.typography.h6.copy(fontWeight = FontWeight.Bold),
-                color = Color.White
-            )
-            Spacer(Modifier.height(10.dp))
-            SummaryRow("Tổng ca:", "${summary.shiftCount} ca")
-            SummaryRow("Tổng giờ làm:", FormatDuration(summary.totalHours))
-            SummaryRow("Tổng tiền (Trước):", formatCurrency(summary.totalGrossIncome))
-            SummaryRow("Thu nhập ròng:", formatCurrency(summary.totalNetIncome))
-            SummaryRow("Trung bình/giờ:", "${formatCurrency(summary.averageHourlyRate)}/h")
-        }
-    }
-}
-
-// Composable phụ trợ cho dòng tổng kết
-@Composable
-fun SummaryRow(label: String, value: String) {
-    Row(modifier = Modifier
-        .fillMaxWidth()
-        .padding(vertical = 2.dp)) {
-        Text(
-            label,
-            fontWeight = FontWeight.SemiBold,
-            color = Beige,
-            modifier = Modifier.weight(1f),
-            fontSize = 14.sp
-        )
-        Text(value, color = Color.White, fontWeight = FontWeight.Medium, fontSize = 14.sp)
-    }
-}
-
-// Composable cho tab "Các Ca Đã Nhập"
-@Composable
-fun ShiftsListTab(
-    shiftsForDay: List<Shift>,
-    onEditClick: (Shift) -> Unit,
-    onDeleteClick: (String) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    LazyColumn(modifier = modifier) {
         if (shiftsForDay.isEmpty()) {
-            item {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 16.dp),
-                    elevation = 4.dp,
-                    backgroundColor = Brown.copy(alpha = 0.9f)
-                ) {
-                    Text(
-                        "Chưa có ca làm nào cho ngày này.",
-                        color = Beige,
-                        modifier = Modifier
-                            .padding(24.dp)
-                            .fillMaxWidth(),
-                        textAlign = TextAlign.Center,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
+            item(key = "empty") {
+                EmptyState(
+                    icon = Icons.Outlined.EventBusy,
+                    title = "Chưa có ca làm",
+                    subtitle = "Nhập giờ làm và thu nhập ở trên để thêm ca đầu tiên cho ngày này."
+                )
             }
         } else {
             items(shiftsForDay, key = { it.id }) { shift ->
-                ShiftItem(
+                SwipeableShiftCard(
                     shift = shift,
-                    onEditClick = { onEditClick(shift) },
-                    onDeleteClick = { onDeleteClick(shift.id) }
+                    isEditing = viewModel.editingShiftId == shift.id,
+                    onEdit = {
+                        viewModel.startEditing(shift)
+                        scope.launch { listState.animateScrollToItem(1) }
+                    },
+                    onDelete = { viewModel.deleteShift(shift.id) },
+                    modifier = Modifier
+                        .padding(horizontal = 16.dp)
+                        .animateItem()
                 )
-                Divider(color = GreenEnd.copy(alpha = 0.5f), thickness = 0.5.dp)
             }
+            dailySummary?.let { summary ->
+                item(key = "breakdown") {
+                    DayBreakdownCard(summary, Modifier.padding(horizontal = 16.dp))
+                }
+            }
+        }
+    }
+
+    if (showDatePicker) {
+        SingleDatePickerDialog(
+            initial = selectedDate,
+            onDismiss = { showDatePicker = false },
+            onConfirm = { viewModel.changeSelectedDate(it) }
+        )
+    }
+
+    timePickerFor?.let { isStart ->
+        val current = if (isStart) viewModel.startTimeInput else viewModel.endTimeInput
+        val initial = runCatching { LocalTime.parse(current, TimeHm) }.getOrElse { LocalTime.now() }
+        TimePickerDialog(
+            title = if (isStart) "Giờ bắt đầu ca" else "Giờ kết thúc ca",
+            initial = initial,
+            onDismiss = { timePickerFor = null },
+            onConfirm = { time ->
+                if (isStart) viewModel.startTimeInput = time.format(TimeHm)
+                else viewModel.endTimeInput = time.format(TimeHm)
+            }
+        )
+    }
+}
+
+@Composable
+private fun DayHeader(
+    date: LocalDate,
+    summary: DailySummary?,
+    onPrev: () -> Unit,
+    onNext: () -> Unit,
+    onPickDate: () -> Unit,
+    onToday: () -> Unit
+) {
+    val onHero = AppTheme.extended.onHero
+    val isToday = date == LocalDate.now()
+
+    HeroHeader {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("QuickEarn", style = MaterialTheme.typography.titleLarge, color = onHero)
+                Text(
+                    if (isToday) "Thu nhập hôm nay" else "Thu nhập trong ngày",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = onHero.copy(alpha = 0.8f)
+                )
+            }
+            AnimatedVisibility(visible = !isToday, enter = fadeIn(), exit = fadeOut()) {
+                AssistChip(
+                    onClick = onToday,
+                    label = { Text("Hôm nay") },
+                    leadingIcon = { Icon(Icons.Outlined.WbTwilight, null, Modifier.size(18.dp)) },
+                    colors = AssistChipDefaults.assistChipColors(
+                        labelColor = onHero,
+                        leadingIconContentColor = onHero
+                    ),
+                    border = AssistChipDefaults.assistChipBorder(enabled = true, borderColor = onHero.copy(alpha = 0.5f))
+                )
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        Surface(shape = MaterialTheme.shapes.extraLarge, color = onHero.copy(alpha = 0.14f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onPrev) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Ngày trước", tint = onHero)
+                }
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable(onClick = onPickDate)
+                        .padding(vertical = 10.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Filled.CalendarMonth, null, tint = onHero, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    AnimatedContent(
+                        targetState = date,
+                        transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
+                        label = "date"
+                    ) { d ->
+                        Text(
+                            d.format(DateWithWeekday).replaceFirstChar { it.uppercase() },
+                            style = MaterialTheme.typography.titleSmall,
+                            color = onHero
+                        )
+                    }
+                }
+                IconButton(onClick = onNext) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Ngày sau", tint = onHero)
+                }
+            }
+        }
+
+        Spacer(Modifier.height(20.dp))
+
+        Text("Thực nhận", style = MaterialTheme.typography.labelLarge, color = onHero.copy(alpha = 0.8f))
+        val animatedNet by animateFloatAsState(
+            targetValue = (summary?.totalNetIncome ?: 0.0).toFloat(),
+            animationSpec = tween(600),
+            label = "net"
+        )
+        Text(
+            formatCurrency(animatedNet.toDouble()),
+            style = MaterialTheme.typography.displaySmall,
+            color = onHero
+        )
+
+        Spacer(Modifier.height(16.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            HeroStat("Giờ làm", formatDurationShort(summary?.totalHours ?: 0.0), Modifier.weight(1f))
+            HeroStat("TB / giờ", formatCurrency(summary?.averageHourlyRate ?: 0.0), Modifier.weight(1.4f))
+            HeroStat("Đơn", "${summary?.totalDeliveries ?: 0}", Modifier.weight(0.8f))
         }
     }
 }
 
-// Composable cho tab "Thống Kê Ngày"
 @Composable
-fun DailyStatsTab(
-    dailySummary: DailySummary?,
-    shiftsForDay: List<Shift>,
-    dateFormatter: DateTimeFormatter,
+private fun ShiftForm(
+    viewModel: ShiftViewModel,
+    onPickStart: () -> Unit,
+    onPickEnd: () -> Unit,
+    onSave: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    LazyColumn(
-        modifier = modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally
+    val isEditing = viewModel.editingShiftId != null
+    val extended = AppTheme.extended
+
+    var showPlusMission by rememberSaveable { mutableStateOf(false) }
+    var showNormalMission by rememberSaveable { mutableStateOf(false) }
+    // Khi bat dau sua mot ca co tien nhiem vu, tu mo o nhiem vu tuong ung.
+    LaunchedEffect(viewModel.editingShiftId) {
+        showPlusMission = viewModel.plusMissionIncomeInput.isNotBlank()
+        showNormalMission = viewModel.normalMissionIncomeInput.isNotBlank()
+    }
+
+    SectionCard(
+        modifier = modifier,
+        title = if (isEditing) "Sửa ca làm" else "Thêm ca làm",
+        icon = if (isEditing) Icons.Filled.Edit else Icons.Filled.Add,
+        trailing = if (isEditing) {
+            { Text("Đang sửa", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary) }
+        } else null
     ) {
-        item {
-            if (dailySummary != null) {
-                DailySummaryCard(summary = dailySummary, dateFormatter = dateFormatter)
-            } else if (shiftsForDay.isNotEmpty()) {
-                // Hiển thị loading hoặc chờ tính toán nếu cần
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    elevation = 2.dp,
-                    backgroundColor = Brown.copy(alpha = 0.1f)
+        ErrorBanner(viewModel.inputError)
+
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            PickerField(
+                label = "Bắt đầu",
+                value = viewModel.startTimeInput,
+                placeholder = "--:--",
+                leadingIcon = Icons.Outlined.Schedule,
+                onClick = onPickStart,
+                modifier = Modifier.weight(1f)
+            )
+            PickerField(
+                label = "Kết thúc",
+                value = viewModel.endTimeInput,
+                placeholder = "--:--",
+                leadingIcon = Icons.Outlined.Schedule,
+                onClick = onPickEnd,
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        val start = runCatching { LocalTime.parse(viewModel.startTimeInput, TimeHm) }.getOrNull()
+        val end = runCatching { LocalTime.parse(viewModel.endTimeInput, TimeHm) }.getOrNull()
+        if (start != null && end != null && start != end) {
+            val overnight = end.isBefore(start)
+            val preview = viewModel.inputPreview
+            val hours = preview?.durationHours
+                ?: (java.time.Duration.between(start, end).toMinutes().let { if (it < 0) it + 1440 else it } / 60.0)
+            Text(
+                "Ca dài ${formatDuration(hours)}" + if (overnight) " · qua đêm" else "",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 6.dp, start = 4.dp)
+            )
+        }
+
+        Spacer(Modifier.height(12.dp))
+        OutlinedTextField(
+            value = viewModel.deliveryCountInput,
+            onValueChange = { viewModel.deliveryCountInput = it.filter(Char::isDigit).take(4) },
+            label = { Text("Số đơn Plus") },
+            placeholder = { Text("0") },
+            leadingIcon = { Icon(Icons.Outlined.Inventory2, null) },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
+            shape = MaterialTheme.shapes.small,
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        Spacer(Modifier.height(16.dp))
+        IncomeBlock(
+            title = "Thu nhập Plus",
+            color = extended.plus,
+            income = viewModel.plusIncomeInput,
+            onIncomeChange = { viewModel.plusIncomeInput = it },
+            mission = viewModel.plusMissionIncomeInput,
+            onMissionChange = { viewModel.plusMissionIncomeInput = it },
+            showMission = showPlusMission,
+            onToggleMission = {
+                if (showPlusMission) viewModel.plusMissionIncomeInput = ""
+                showPlusMission = !showPlusMission
+            }
+        )
+
+        Spacer(Modifier.height(16.dp))
+        IncomeBlock(
+            title = "Thu nhập thường",
+            color = extended.normal,
+            income = viewModel.normalIncomeInput,
+            onIncomeChange = { viewModel.normalIncomeInput = it },
+            mission = viewModel.normalMissionIncomeInput,
+            onMissionChange = { viewModel.normalMissionIncomeInput = it },
+            showMission = showNormalMission,
+            onToggleMission = {
+                if (showNormalMission) viewModel.normalMissionIncomeInput = ""
+                showNormalMission = !showNormalMission
+            },
+            imeAction = ImeAction.Done
+        )
+
+        val preview = viewModel.inputPreview
+        AnimatedVisibility(
+            visible = preview != null,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut()
+        ) {
+            Surface(
+                color = MaterialTheme.colorScheme.primaryContainer,
+                shape = MaterialTheme.shapes.medium,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 16.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        "Đang tính toán...",
-                        modifier = Modifier.padding(16.dp),
-                        textAlign = TextAlign.Center,
-                        color = Beige
-                    )
-                }
-            } else {
-                // Không có dữ liệu
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    elevation = 4.dp,
-                    backgroundColor = Brown.copy(alpha = 0.9f)
-                ) {
-                    Column(
-                        modifier = Modifier.padding(24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
+                    Icon(Icons.Outlined.Payments, null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                    Spacer(Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            "Chưa có ca làm nào",
-                            color = Color.White,
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            textAlign = TextAlign.Center
+                            "Ước tính thực nhận",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
                         )
-                        Spacer(Modifier.height(12.dp))
                         Text(
-                            "Hãy thêm ca làm để xem thống kê ngày",
-                            color = Beige.copy(alpha = 0.9f),
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium,
-                            textAlign = TextAlign.Center
+                            formatCurrency(preview?.netIncome ?: 0.0),
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                    if ((preview?.hourlyRate ?: 0.0) > 0) {
+                        Text(
+                            "${formatCurrency(preview!!.hourlyRate)}/h",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                     }
                 }
             }
         }
+
+        Spacer(Modifier.height(20.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (isEditing) {
+                OutlinedButton(
+                    onClick = { viewModel.clearInputs() },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(52.dp)
+                ) { Text("Hủy sửa") }
+            }
+            Button(
+                onClick = onSave,
+                enabled = viewModel.isLoaded,
+                modifier = Modifier
+                    .weight(if (isEditing) 1.4f else 1f)
+                    .height(52.dp)
+            ) {
+                Icon(Icons.Filled.Check, null, Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(if (isEditing) "Lưu thay đổi" else "Lưu ca làm")
+            }
+        }
     }
 }
 
-// Hàm định dạng tiền tệ Hàn Quốc
-fun formatCurrency(amount: Double): String {
-    val numberFormat = NumberFormat.getNumberInstance(Locale.KOREA)
-    val roundedAmount = Math.round(amount)
-    return "${numberFormat.format(roundedAmount)}₩"
-} 
+@Composable
+private fun IncomeBlock(
+    title: String,
+    color: Color,
+    income: String,
+    onIncomeChange: (String) -> Unit,
+    mission: String,
+    onMissionChange: (String) -> Unit,
+    showMission: Boolean,
+    onToggleMission: () -> Unit,
+    imeAction: ImeAction = ImeAction.Next
+) {
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            ColorDot(color)
+            Spacer(Modifier.width(8.dp))
+            Text(title, style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
+            FilterChip(
+                selected = showMission,
+                onClick = onToggleMission,
+                label = { Text("Tiền nhiệm vụ") },
+                leadingIcon = {
+                    Icon(
+                        if (showMission) Icons.Filled.Check else Icons.Outlined.EmojiEvents,
+                        null,
+                        Modifier.size(18.dp)
+                    )
+                }
+            )
+        }
+        Spacer(Modifier.height(4.dp))
+        MoneyField(
+            value = income,
+            onValueChange = onIncomeChange,
+            label = "Thu nhập (trước trừ)",
+            imeAction = if (showMission) ImeAction.Next else imeAction
+        )
+        AnimatedVisibility(
+            visible = showMission,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut()
+        ) {
+            MoneyField(
+                value = mission,
+                onValueChange = onMissionChange,
+                label = "Tiền nhiệm vụ",
+                leadingIcon = Icons.Outlined.EmojiEvents,
+                imeAction = imeAction,
+                modifier = Modifier.padding(top = 8.dp)
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SwipeableShiftCard(
+    shift: Shift,
+    isEditing: Boolean,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = { value ->
+            if (value == SwipeToDismissBoxValue.EndToStart) {
+                onDelete()
+                true
+            } else false
+        },
+        positionalThreshold = { it * 0.4f }
+    )
+
+    SwipeToDismissBox(
+        state = dismissState,
+        enableDismissFromStartToEnd = false,
+        modifier = modifier,
+        backgroundContent = {
+            val color by animateColorAsState(
+                if (dismissState.targetValue == SwipeToDismissBoxValue.EndToStart)
+                    MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.errorContainer,
+                label = "swipe"
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(color, MaterialTheme.shapes.large)
+                    .padding(horizontal = 24.dp),
+                contentAlignment = Alignment.CenterEnd
+            ) {
+                Icon(Icons.Outlined.DeleteOutline, "Xóa", tint = MaterialTheme.colorScheme.onError)
+            }
+        }
+    ) {
+        ShiftCard(shift = shift, isEditing = isEditing, onClick = onEdit, onDelete = onDelete)
+    }
+}
+
+@Composable
+private fun ShiftCard(shift: Shift, isEditing: Boolean, onClick: () -> Unit, onDelete: () -> Unit) {
+    val extended = AppTheme.extended
+    Card(
+        onClick = onClick,
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(
+            containerColor = if (isEditing) MaterialTheme.colorScheme.secondaryContainer
+            else MaterialTheme.colorScheme.surfaceContainerLow
+        ),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.Top) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "${shift.startTime.take(5)} – ${shift.endTime.take(5)}",
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Text(
+                    buildString {
+                        append(formatDuration(shift.calculateDurationHours()))
+                        if (shift.deliveryCount > 0) append(" · ${shift.deliveryCount} đơn")
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(10.dp))
+                if (shift.calculatePlusGrossIncome() > 0) {
+                    IncomeLine(extended.plus, "Plus", shift.calculatePlusGrossIncome(), shift.plusMissionIncome)
+                }
+                if (shift.calculateNormalGrossIncome() > 0) {
+                    IncomeLine(extended.normal, "Thường", shift.calculateNormalGrossIncome(), shift.normalMissionIncome)
+                }
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    formatCurrency(shift.calculateNetIncome()),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    "${formatCurrency(shift.calculateHourlyRate())}/h",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                IconButton(onClick = onDelete, modifier = Modifier.padding(top = 4.dp)) {
+                    Icon(
+                        Icons.Outlined.DeleteOutline,
+                        contentDescription = "Xóa ca",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun IncomeLine(color: Color, label: String, gross: Double, mission: Double) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 2.dp)) {
+        ColorDot(color, Modifier.size(8.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(
+            "$label ${formatCurrency(gross)}" + if (mission > 0) " (NV ${formatCurrency(mission)})" else "",
+            style = MaterialTheme.typography.bodySmall
+        )
+    }
+}
+
+@Composable
+private fun DayBreakdownCard(summary: DailySummary, modifier: Modifier = Modifier) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    val extended = AppTheme.extended
+    SectionCard(
+        modifier = modifier,
+        title = "Chi tiết ngày",
+        icon = Icons.Outlined.Payments,
+        trailing = {
+            IconButton(onClick = { expanded = !expanded }) {
+                Icon(
+                    if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                    contentDescription = if (expanded) "Thu gọn" else "Mở rộng"
+                )
+            }
+        }
+    ) {
+        MetricRow("Tổng trước trừ", formatCurrency(summary.totalGrossIncome))
+        MetricRow("Thực nhận", formatCurrency(summary.totalNetIncome), emphasize = true, valueColor = MaterialTheme.colorScheme.primary)
+        AnimatedVisibility(visible = expanded) {
+            Column {
+                HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                MetricRow("Số ca", "${summary.shiftCount} ca")
+                MetricRow("Tổng giờ làm", formatDuration(summary.totalHours))
+                MetricRow("Plus trước trừ", formatCurrency(summary.totalPlusGrossIncome), valueColor = extended.plus)
+                MetricRow("Plus thực nhận", formatCurrency(summary.totalPlusNetIncome), valueColor = extended.plus)
+                MetricRow("Thường trước trừ", formatCurrency(summary.totalNormalGrossIncome), valueColor = extended.normal)
+                MetricRow("Thường thực nhận", formatCurrency(summary.totalNormalNetIncome), valueColor = extended.normal)
+                MetricRow("Trung bình / giờ", "${formatCurrency(summary.averageHourlyRate)}/h")
+            }
+        }
+    }
+}
