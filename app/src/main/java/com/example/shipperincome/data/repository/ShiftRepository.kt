@@ -115,7 +115,8 @@ class ShiftRepository(private val dataDir: File) {
         val deliveryFeeSnapshot: Double? = null,
         val grossIncome: Double? = null,
         val shiftType: String? = null,
-        val taxRateSnapshot: Double? = null
+        val taxRateSnapshot: Double? = null,
+        val durationMinutes: Int? = null
     ) {
         fun isLegacy(): Boolean = grossIncome != null || shiftType != null || taxRateSnapshot != null
 
@@ -147,7 +148,8 @@ class ShiftRepository(private val dataDir: File) {
                 normalMissionIncome = normalMissionIncome ?: 0.0,
                 plusTaxRateSnapshot = plusTaxRateSnapshot ?: legacyTaxRate,
                 normalTaxRateSnapshot = normalTaxRateSnapshot ?: legacyTaxRate,
-                deliveryFeeSnapshot = deliveryFeeSnapshot ?: SettingsRepository.DEFAULT_DELIVERY_FEE
+                deliveryFeeSnapshot = deliveryFeeSnapshot ?: SettingsRepository.DEFAULT_DELIVERY_FEE,
+                durationMinutes = durationMinutes
             )
         }
     }

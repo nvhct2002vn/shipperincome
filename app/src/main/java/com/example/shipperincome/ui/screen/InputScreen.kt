@@ -58,6 +58,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
@@ -67,6 +70,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -94,6 +98,7 @@ import com.example.shipperincome.ui.components.MoneyField
 import com.example.shipperincome.ui.components.PickerField
 import com.example.shipperincome.ui.components.SectionCard
 import com.example.shipperincome.ui.components.SingleDatePickerDialog
+import com.example.shipperincome.ui.components.StatusBarScrim
 import com.example.shipperincome.ui.components.TimePickerDialog
 import com.example.shipperincome.ui.theme.AppTheme
 import com.example.shipperincome.ui.viewmodel.DailySummary
@@ -103,6 +108,8 @@ import com.example.shipperincome.utils.TimeHm
 import com.example.shipperincome.utils.formatCurrency
 import com.example.shipperincome.utils.formatDuration
 import com.example.shipperincome.utils.formatDurationShort
+import com.example.shipperincome.utils.minutesToHoursInput
+import com.example.shipperincome.utils.parseHoursToMinutes
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.LocalTime
@@ -133,6 +140,9 @@ fun InputScreen(viewModel: ShiftViewModel) {
         }
     }
 
+    val scrolled by remember { derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0 } }
+
+    Box(Modifier.fillMaxSize()) {
     LazyColumn(
         state = listState,
         modifier = Modifier
@@ -216,6 +226,9 @@ fun InputScreen(viewModel: ShiftViewModel) {
                 }
             }
         }
+    }
+
+    StatusBarScrim(visible = scrolled)
     }
 
     if (showDatePicker) {
@@ -348,11 +361,23 @@ private fun ShiftForm(
 
     var showPlusMission by rememberSaveable { mutableStateOf(false) }
     var showNormalMission by rememberSaveable { mutableStateOf(false) }
-    // Khi bat dau sua mot ca co tien nhiem vu, tu mo o nhiem vu tuong ung.
+    // Chi hien mot loai thu nhap moi luc cho gon; tab con lai van giu so da nhap.
+    var plusTab by rememberSaveable { mutableStateOf(true) }
+    // Khi bat dau sua mot ca: mo o nhiem vu neu co, va mo tab cua loai thu nhap ca do co.
     LaunchedEffect(viewModel.editingShiftId) {
         showPlusMission = viewModel.plusMissionIncomeInput.isNotBlank()
         showNormalMission = viewModel.normalMissionIncomeInput.isNotBlank()
+        if (viewModel.editingShiftId != null) {
+            plusTab = viewModel.plusIncomeInput.isNotBlank() || viewModel.plusMissionIncomeInput.isNotBlank()
+        }
     }
+    LaunchedEffect(viewModel.inputError) {
+        if (viewModel.inputError == ShiftViewModel.ERROR_PLUS_NEEDS_DELIVERIES) plusTab = true
+    }
+    val plusTotal = (viewModel.plusIncomeInput.toDoubleOrNull() ?: 0.0) +
+        (viewModel.plusMissionIncomeInput.toDoubleOrNull() ?: 0.0)
+    val normalTotal = (viewModel.normalIncomeInput.toDoubleOrNull() ?: 0.0) +
+        (viewModel.normalMissionIncomeInput.toDoubleOrNull() ?: 0.0)
 
     SectionCard(
         modifier = modifier,
@@ -364,83 +389,63 @@ private fun ShiftForm(
     ) {
         ErrorBanner(viewModel.inputError)
 
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            PickerField(
-                label = "Bắt đầu",
-                value = viewModel.startTimeInput,
-                placeholder = "--:--",
-                leadingIcon = Icons.Outlined.Schedule,
-                onClick = onPickStart,
-                modifier = Modifier.weight(1f)
-            )
-            PickerField(
-                label = "Kết thúc",
-                value = viewModel.endTimeInput,
-                placeholder = "--:--",
-                leadingIcon = Icons.Outlined.Schedule,
-                onClick = onPickEnd,
-                modifier = Modifier.weight(1f)
-            )
-        }
+        WorkTimeSection(viewModel = viewModel, onPickStart = onPickStart, onPickEnd = onPickEnd)
 
-        val start = runCatching { LocalTime.parse(viewModel.startTimeInput, TimeHm) }.getOrNull()
-        val end = runCatching { LocalTime.parse(viewModel.endTimeInput, TimeHm) }.getOrNull()
-        if (start != null && end != null && start != end) {
-            val overnight = end.isBefore(start)
-            val preview = viewModel.inputPreview
-            val hours = preview?.durationHours
-                ?: (java.time.Duration.between(start, end).toMinutes().let { if (it < 0) it + 1440 else it } / 60.0)
-            Text(
-                "Ca dài ${formatDuration(hours)}" + if (overnight) " · qua đêm" else "",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 6.dp, start = 4.dp)
-            )
-        }
-
+        Spacer(Modifier.height(16.dp))
+        IncomeTypeSelector(
+            plusSelected = plusTab,
+            onSelect = { plusTab = it },
+            plusTotal = plusTotal,
+            normalTotal = normalTotal
+        )
         Spacer(Modifier.height(12.dp))
-        OutlinedTextField(
-            value = viewModel.deliveryCountInput,
-            onValueChange = { viewModel.deliveryCountInput = it.filter(Char::isDigit).take(4) },
-            label = { Text("Số đơn Plus") },
-            placeholder = { Text("0") },
-            leadingIcon = { Icon(Icons.Outlined.Inventory2, null) },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
-            shape = MaterialTheme.shapes.small,
-            modifier = Modifier.fillMaxWidth()
-        )
 
-        Spacer(Modifier.height(16.dp))
-        IncomeBlock(
-            title = "Thu nhập Plus",
-            color = extended.plus,
-            income = viewModel.plusIncomeInput,
-            onIncomeChange = { viewModel.plusIncomeInput = it },
-            mission = viewModel.plusMissionIncomeInput,
-            onMissionChange = { viewModel.plusMissionIncomeInput = it },
-            showMission = showPlusMission,
-            onToggleMission = {
-                if (showPlusMission) viewModel.plusMissionIncomeInput = ""
-                showPlusMission = !showPlusMission
+        AnimatedContent(
+            targetState = plusTab,
+            transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
+            label = "incomeTab"
+        ) { isPlus ->
+            if (isPlus) {
+                Column {
+                    OutlinedTextField(
+                        value = viewModel.deliveryCountInput,
+                        onValueChange = { viewModel.deliveryCountInput = it.filter(Char::isDigit).take(4) },
+                        label = { Text("Số đơn") },
+                        placeholder = { Text("0") },
+                        leadingIcon = { Icon(Icons.Outlined.Inventory2, null) },
+                        singleLine = true,
+                        isError = viewModel.inputError == ShiftViewModel.ERROR_PLUS_NEEDS_DELIVERIES,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
+                        shape = MaterialTheme.shapes.small,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    IncomeBlock(
+                        income = viewModel.plusIncomeInput,
+                        onIncomeChange = { viewModel.plusIncomeInput = it },
+                        mission = viewModel.plusMissionIncomeInput,
+                        onMissionChange = { viewModel.plusMissionIncomeInput = it },
+                        showMission = showPlusMission,
+                        onToggleMission = {
+                            if (showPlusMission) viewModel.plusMissionIncomeInput = ""
+                            showPlusMission = !showPlusMission
+                        }
+                    )
+                }
+            } else {
+                IncomeBlock(
+                    income = viewModel.normalIncomeInput,
+                    onIncomeChange = { viewModel.normalIncomeInput = it },
+                    mission = viewModel.normalMissionIncomeInput,
+                    onMissionChange = { viewModel.normalMissionIncomeInput = it },
+                    showMission = showNormalMission,
+                    onToggleMission = {
+                        if (showNormalMission) viewModel.normalMissionIncomeInput = ""
+                        showNormalMission = !showNormalMission
+                    }
+                )
             }
-        )
-
-        Spacer(Modifier.height(16.dp))
-        IncomeBlock(
-            title = "Thu nhập thường",
-            color = extended.normal,
-            income = viewModel.normalIncomeInput,
-            onIncomeChange = { viewModel.normalIncomeInput = it },
-            mission = viewModel.normalMissionIncomeInput,
-            onMissionChange = { viewModel.normalMissionIncomeInput = it },
-            showMission = showNormalMission,
-            onToggleMission = {
-                if (showNormalMission) viewModel.normalMissionIncomeInput = ""
-                showNormalMission = !showNormalMission
-            },
-            imeAction = ImeAction.Done
-        )
+        }
 
         val preview = viewModel.inputPreview
         AnimatedVisibility(
@@ -509,23 +514,191 @@ private fun ShiftForm(
     }
 }
 
+private val QUICK_HOURS = listOf(4, 6, 8, 10, 12)
+
+/** Gio lam: chon khung gio bat dau - ket thuc, hoac nhap thang tong so gio trong ngay. */
+@Composable
+private fun WorkTimeSection(viewModel: ShiftViewModel, onPickStart: () -> Unit, onPickEnd: () -> Unit) {
+    val totalMode = viewModel.totalHoursMode
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("Giờ làm", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
+        FilterChip(
+            selected = !totalMode,
+            onClick = { viewModel.updateTotalHoursMode(false) },
+            label = { Text("Khung giờ") }
+        )
+        Spacer(Modifier.width(8.dp))
+        FilterChip(
+            selected = totalMode,
+            onClick = { viewModel.updateTotalHoursMode(true) },
+            label = { Text("Tổng giờ") }
+        )
+    }
+    Spacer(Modifier.height(8.dp))
+
+    AnimatedContent(
+        targetState = totalMode,
+        transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
+        label = "timeMode"
+    ) { isTotal ->
+        if (isTotal) {
+            TotalHoursInput(viewModel)
+        } else {
+            Column {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    PickerField(
+                        label = "Bắt đầu",
+                        value = viewModel.startTimeInput,
+                        placeholder = "--:--",
+                        leadingIcon = Icons.Outlined.Schedule,
+                        onClick = onPickStart,
+                        modifier = Modifier.weight(1f)
+                    )
+                    PickerField(
+                        label = "Kết thúc",
+                        value = viewModel.endTimeInput,
+                        placeholder = "--:--",
+                        leadingIcon = Icons.Outlined.Schedule,
+                        onClick = onPickEnd,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                val start = runCatching { LocalTime.parse(viewModel.startTimeInput, TimeHm) }.getOrNull()
+                val end = runCatching { LocalTime.parse(viewModel.endTimeInput, TimeHm) }.getOrNull()
+                if (start != null && end != null && start != end) {
+                    val minutes = java.time.Duration.between(start, end).toMinutes().let { if (it < 0) it + 1440 else it }
+                    Text(
+                        "Ca dài ${formatDuration(minutes / 60.0)}" + if (end.isBefore(start)) " · qua đêm" else "",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 6.dp, start = 4.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TotalHoursInput(viewModel: ShiftViewModel) {
+    val minutes = parseHoursToMinutes(viewModel.totalHoursInput)
+    Column {
+        OutlinedTextField(
+            value = viewModel.totalHoursInput,
+            onValueChange = { value ->
+                viewModel.totalHoursInput = value.filter { it.isDigit() || it in ".,:h" }.take(6)
+            },
+            label = { Text("Tổng số giờ làm") },
+            placeholder = { Text("VD: 8 hoặc 8.5") },
+            leadingIcon = { Icon(Icons.Outlined.Schedule, null) },
+            suffix = { Text("giờ") },
+            supportingText = {
+                Text(
+                    if (minutes != null && minutes > 0) "= ${formatDuration(minutes / 60.0)}"
+                    else "Gõ 8.5 hoặc 8:30 cho 8 giờ 30 phút"
+                )
+            },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
+            shape = MaterialTheme.shapes.small,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            QuickTimeChip("−30p", Modifier.weight(1.1f)) {
+                val current = minutes ?: 0
+                viewModel.totalHoursInput = minutesToHoursInput((current - 30).coerceAtLeast(30))
+            }
+            QUICK_HOURS.forEach { h ->
+                QuickTimeChip("${h}h", Modifier.weight(1f), selected = minutes == h * 60) {
+                    viewModel.totalHoursInput = h.toString()
+                }
+            }
+            QuickTimeChip("+30p", Modifier.weight(1.1f)) {
+                val current = minutes ?: 0
+                viewModel.totalHoursInput = minutesToHoursInput((current + 30).coerceAtMost(24 * 60))
+            }
+        }
+    }
+}
+
+@Composable
+private fun QuickTimeChip(label: String, modifier: Modifier = Modifier, selected: Boolean = false, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = MaterialTheme.shapes.small,
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+        contentColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+        modifier = modifier.height(36.dp)
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(label, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+        }
+    }
+}
+
+/** Hai tab Plus / Thuong; moi tab hien so tien da nhap de biet tab kia co du lieu. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun IncomeTypeSelector(
+    plusSelected: Boolean,
+    onSelect: (Boolean) -> Unit,
+    plusTotal: Double,
+    normalTotal: Double
+) {
+    val extended = AppTheme.extended
+    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+        listOf(true, false).forEachIndexed { index, isPlus ->
+            val total = if (isPlus) plusTotal else normalTotal
+            SegmentedButton(
+                selected = plusSelected == isPlus,
+                onClick = { onSelect(isPlus) },
+                shape = SegmentedButtonDefaults.itemShape(index = index, count = 2),
+                icon = {},
+                label = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        ColorDot(if (isPlus) extended.plus else extended.normal, Modifier.size(8.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Column {
+                            Text(if (isPlus) "Plus" else "Thường", style = MaterialTheme.typography.labelLarge)
+                            if (total > 0) {
+                                Text(
+                                    formatCurrency(total),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            )
+        }
+    }
+}
+
 @Composable
 private fun IncomeBlock(
-    title: String,
-    color: Color,
     income: String,
     onIncomeChange: (String) -> Unit,
     mission: String,
     onMissionChange: (String) -> Unit,
     showMission: Boolean,
     onToggleMission: () -> Unit,
-    imeAction: ImeAction = ImeAction.Next
+    imeAction: ImeAction = ImeAction.Done
 ) {
     Column {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            ColorDot(color)
-            Spacer(Modifier.width(8.dp))
-            Text(title, style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
+        MoneyField(
+            value = income,
+            onValueChange = onIncomeChange,
+            label = "Thu nhập (trước trừ)",
+            imeAction = if (showMission) ImeAction.Next else imeAction
+        )
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             FilterChip(
                 selected = showMission,
                 onClick = onToggleMission,
@@ -539,13 +712,6 @@ private fun IncomeBlock(
                 }
             )
         }
-        Spacer(Modifier.height(4.dp))
-        MoneyField(
-            value = income,
-            onValueChange = onIncomeChange,
-            label = "Thu nhập (trước trừ)",
-            imeAction = if (showMission) ImeAction.Next else imeAction
-        )
         AnimatedVisibility(
             visible = showMission,
             enter = expandVertically() + fadeIn(),
@@ -621,10 +787,7 @@ private fun ShiftCard(shift: Shift, isEditing: Boolean, onClick: () -> Unit, onD
     ) {
         Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.Top) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    "${shift.startTime.take(5)} – ${shift.endTime.take(5)}",
-                    style = MaterialTheme.typography.titleMedium
-                )
+                Text(shift.timeLabel(), style = MaterialTheme.typography.titleMedium)
                 Text(
                     buildString {
                         append(formatDuration(shift.calculateDurationHours()))

@@ -11,6 +11,8 @@ import com.example.shipperincome.data.model.Shift
 import com.example.shipperincome.data.repository.SettingsRepository
 import com.example.shipperincome.data.repository.ShiftRepository
 import com.example.shipperincome.utils.TimeHm
+import com.example.shipperincome.utils.minutesToHoursInput
+import com.example.shipperincome.utils.parseHoursToMinutes
 import com.example.shipperincome.utils.toPlainInput
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
@@ -61,6 +63,10 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
 
     var selectedDate by mutableStateOf(LocalDate.now())
         private set
+    /** true: nhap thang tong so gio trong ngay; false: chon gio bat dau - ket thuc. */
+    var totalHoursMode by mutableStateOf(settingsRepository.isTotalHoursMode())
+        private set
+    var totalHoursInput by mutableStateOf("")
     var startTimeInput by mutableStateOf("")
     var endTimeInput by mutableStateOf("")
     var deliveryCountInput by mutableStateOf("")
@@ -107,10 +113,12 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
             if (plus + normal + plusMission + normalMission <= 0.0) return null
             val start = parseTime(startTimeInput)
             val end = parseTime(endTimeInput)
+            val totalMinutes = if (totalHoursMode) parseHoursToMinutes(totalHoursInput)?.takeIf { it in 1..MAX_MINUTES } else null
             val shift = Shift(
                 date = selectedDate.toString(),
                 startTime = start?.toString() ?: "00:00",
                 endTime = end?.toString() ?: "00:00",
+                durationMinutes = totalMinutes,
                 deliveryCount = deliveryCountInput.toIntOrNull() ?: 0,
                 plusGrossIncome = plus,
                 normalGrossIncome = normal,
@@ -120,7 +128,11 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
                 normalTaxRateSnapshot = settingsRepository.getNormalTaxRate(),
                 deliveryFeeSnapshot = settingsRepository.getDeliveryFee()
             )
-            val hours = if (start != null && end != null && start != end) shift.calculateDurationHours() else 0.0
+            val hours = when {
+                totalHoursMode -> totalMinutes?.div(60.0) ?: 0.0
+                start != null && end != null && start != end -> shift.calculateDurationHours()
+                else -> 0.0
+            }
             val net = shift.calculateNetIncome()
             return InputPreview(
                 grossIncome = shift.calculateGrossIncome(),
@@ -165,6 +177,7 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
 
         val startTime = parseTime(startTimeInput)
         val endTime = parseTime(endTimeInput)
+        val totalMinutes = parseHoursToMinutes(totalHoursInput)
         val deliveryCount = deliveryCountInput.toIntOrNull() ?: 0
         val plusIncome = plusIncomeInput.toDoubleOrNull() ?: 0.0
         val normalIncome = normalIncomeInput.toDoubleOrNull() ?: 0.0
@@ -173,16 +186,21 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
         val totalPlusIncome = plusIncome + plusMissionIncome
         val totalNormalIncome = normalIncome + normalMissionIncome
 
-        if (startTime == null) { inputError = "Chọn giờ bắt đầu"; return }
-        if (endTime == null) { inputError = "Chọn giờ kết thúc"; return }
-        if (startTime == endTime) { inputError = "Giờ bắt đầu và kết thúc không được giống nhau"; return }
+        if (totalHoursMode) {
+            if (totalMinutes == null) { inputError = "Nhập số giờ làm, ví dụ 8 hoặc 8:30"; return }
+            if (totalMinutes !in 1..MAX_MINUTES) { inputError = "Số giờ phải lớn hơn 0 và không quá 24 giờ"; return }
+        } else {
+            if (startTime == null) { inputError = "Chọn giờ bắt đầu"; return }
+            if (endTime == null) { inputError = "Chọn giờ kết thúc"; return }
+            if (startTime == endTime) { inputError = "Giờ bắt đầu và kết thúc không được giống nhau"; return }
+        }
         if (deliveryCount < 0) { inputError = "Số đơn hàng phải là số không âm"; return }
         if (plusIncome < 0 || normalIncome < 0 || plusMissionIncome < 0 || normalMissionIncome < 0) {
             inputError = "Thu nhập không được âm"
             return
         }
         if (totalPlusIncome > 0.0 && deliveryCount <= 0) {
-            inputError = "Đã nhập thu nhập Plus thì phải nhập số đơn hàng"
+            inputError = ERROR_PLUS_NEEDS_DELIVERIES
             return
         }
         if (totalPlusIncome <= 0.0 && totalNormalIncome <= 0.0) {
@@ -192,8 +210,9 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
 
         val currentShifts = _allShifts.value.toMutableList()
         val dateString = selectedDate.format(DateTimeFormatter.ISO_DATE)
-        val formattedStartTime = startTime.format(DateTimeFormatter.ISO_TIME)
-        val formattedEndTime = endTime.format(DateTimeFormatter.ISO_TIME)
+        val formattedStartTime = if (totalHoursMode) "" else startTime!!.format(DateTimeFormatter.ISO_TIME)
+        val formattedEndTime = if (totalHoursMode) "" else endTime!!.format(DateTimeFormatter.ISO_TIME)
+        val durationMinutes = if (totalHoursMode) totalMinutes else null
         val currentPlusTaxRate = settingsRepository.getPlusTaxRate()
         val currentNormalTaxRate = settingsRepository.getNormalTaxRate()
         val currentDeliveryFee = settingsRepository.getDeliveryFee()
@@ -212,7 +231,8 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
                     normalMissionIncome = normalMissionIncome,
                     plusTaxRateSnapshot = currentPlusTaxRate,
                     normalTaxRateSnapshot = currentNormalTaxRate,
-                    deliveryFeeSnapshot = currentDeliveryFee
+                    deliveryFeeSnapshot = currentDeliveryFee,
+                    durationMinutes = durationMinutes
                 )
             )
         } else {
@@ -232,7 +252,8 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
                 normalMissionIncome = normalMissionIncome,
                 plusTaxRateSnapshot = currentPlusTaxRate,
                 normalTaxRateSnapshot = currentNormalTaxRate,
-                deliveryFeeSnapshot = currentDeliveryFee
+                deliveryFeeSnapshot = currentDeliveryFee,
+                durationMinutes = durationMinutes
             )
         }
 
@@ -246,7 +267,7 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
         if (editingShiftId == shiftId) clearInputs()
         persist(_allShifts.value.filterNot { it.id == shiftId })
         _messages.trySend(
-            UiMessage("Đã xóa ca ${removed.startTime.take(5)} – ${removed.endTime.take(5)}", "Hoàn tác") {
+            UiMessage("Đã xóa ca ${removed.timeLabel()}", "Hoàn tác") {
                 if (_allShifts.value.none { it.id == removed.id }) {
                     persist(_allShifts.value + removed)
                 }
@@ -263,18 +284,35 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
         plusMissionIncomeInput = if (shift.plusMissionIncome > 0) shift.plusMissionIncome.toPlainInput() else ""
         normalMissionIncomeInput = if (shift.normalMissionIncome > 0) shift.normalMissionIncome.toPlainInput() else ""
 
-        try {
-            startTimeInput = LocalTime.parse(shift.startTime).format(TimeHm)
-            endTimeInput = LocalTime.parse(shift.endTime).format(TimeHm)
-        } catch (e: DateTimeParseException) {
-            startTimeInput = shift.startTime
-            endTimeInput = shift.endTime
+        val minutes = shift.durationMinutes
+        if (minutes != null) {
+            totalHoursMode = true
+            totalHoursInput = minutesToHoursInput(minutes)
+            startTimeInput = ""
+            endTimeInput = ""
+        } else {
+            totalHoursMode = false
+            totalHoursInput = ""
+            try {
+                startTimeInput = LocalTime.parse(shift.startTime).format(TimeHm)
+                endTimeInput = LocalTime.parse(shift.endTime).format(TimeHm)
+            } catch (e: DateTimeParseException) {
+                startTimeInput = shift.startTime
+                endTimeInput = shift.endTime
+            }
         }
 
         inputError = null
     }
 
+    fun updateTotalHoursMode(enabled: Boolean) {
+        totalHoursMode = enabled
+        settingsRepository.setTotalHoursMode(enabled)
+        inputError = null
+    }
+
     fun clearInputs() {
+        totalHoursInput = ""
         startTimeInput = ""
         endTimeInput = ""
         deliveryCountInput = ""
@@ -320,6 +358,13 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
             persist(byId.values.toList())
             _messages.send(UiMessage("Đã khôi phục ${imported.size} ca ($added ca mới)."))
         }
+    }
+
+    companion object {
+        private const val MAX_MINUTES = 24 * 60
+
+        /** Loi gan voi tab Plus: man hinh dua vao day de tu chuyen sang tab Plus. */
+        const val ERROR_PLUS_NEEDS_DELIVERIES = "Đã nhập thu nhập Plus thì phải nhập số đơn hàng"
     }
 
     private fun parseTime(timeString: String): LocalTime? {

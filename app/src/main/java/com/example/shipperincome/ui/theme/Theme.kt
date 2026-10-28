@@ -89,6 +89,7 @@ data class ExtendedColors(
     val normal: Color,
     val heroGradient: Brush,
     val onHero: Color,
+    val statusBarScrim: Color,
     val isDark: Boolean
 )
 
@@ -98,6 +99,7 @@ val LocalExtendedColors = staticCompositionLocalOf {
         normal = NormalLight,
         heroGradient = Brush.linearGradient(listOf(Green40, Teal40)),
         onHero = Color.White,
+        statusBarScrim = Green40,
         isDark = false
     )
 }
@@ -134,6 +136,7 @@ fun ShipperIncomeTheme(
             normal = NormalDark,
             heroGradient = Brush.linearGradient(listOf(Green30, Teal30)),
             onHero = Green90,
+            statusBarScrim = Green30,
             isDark = true
         )
     } else {
@@ -142,6 +145,7 @@ fun ShipperIncomeTheme(
             normal = NormalLight,
             heroGradient = Brush.linearGradient(listOf(Green40, Teal40)),
             onHero = Color.White,
+            statusBarScrim = Green40,
             isDark = false
         )
     }

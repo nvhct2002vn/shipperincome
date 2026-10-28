@@ -4,6 +4,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -71,6 +72,9 @@ fun AppNavigation(viewModel: ShiftViewModel) {
     CompositionLocalProvider(LocalSnackbarHostState provides snackbarHostState) {
         Scaffold(
             snackbarHost = { SnackbarHost(snackbarHostState) },
+            // Khong de Scaffold chiem inset thanh trang thai; neu khong HeroHeader se khong
+            // con inset de day noi dung xuong va chu bi de len dong ho.
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
             containerColor = MaterialTheme.colorScheme.background,
             bottomBar = {
                 NavigationBar {

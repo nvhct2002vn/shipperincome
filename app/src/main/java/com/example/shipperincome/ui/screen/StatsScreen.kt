@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
@@ -41,6 +42,7 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,6 +63,7 @@ import com.example.shipperincome.ui.components.MetricRow
 import com.example.shipperincome.ui.components.RangeDatePickerDialog
 import com.example.shipperincome.ui.components.SectionCard
 import com.example.shipperincome.ui.components.SingleDatePickerDialog
+import com.example.shipperincome.ui.components.StatusBarScrim
 import com.example.shipperincome.ui.theme.AppTheme
 import com.example.shipperincome.ui.viewmodel.ChartPoint
 import com.example.shipperincome.ui.viewmodel.DailySummary
@@ -108,7 +111,12 @@ fun StatsScreen(viewModel: ShiftViewModel) {
     val data = stats
     val summary = data?.summary
 
+    val listState = rememberLazyListState()
+    val scrolled by remember { derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0 } }
+
+    Box(Modifier.fillMaxSize()) {
     LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -182,6 +190,9 @@ fun StatsScreen(viewModel: ShiftViewModel) {
                 DayRow(day, Modifier.padding(horizontal = 16.dp))
             }
         }
+    }
+
+    StatusBarScrim(visible = scrolled)
     }
 
     if (showDayPicker) {

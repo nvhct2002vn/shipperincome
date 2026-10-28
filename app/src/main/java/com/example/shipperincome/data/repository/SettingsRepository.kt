@@ -18,6 +18,7 @@ class SettingsRepository(context: Context) {
         private const val KEY_PLUS_TAX_RATE = "plus_tax_rate_v2"
         private const val KEY_NORMAL_TAX_RATE = "normal_tax_rate_v2"
         private const val KEY_DELIVERY_FEE = "delivery_fee_v2"
+        private const val KEY_TOTAL_HOURS_MODE = "total_hours_mode"
 
         const val DEFAULT_TAX_RATE = 0.057
         const val DEFAULT_PLUS_TAX_RATE = 0.057
@@ -39,6 +40,13 @@ class SettingsRepository(context: Context) {
         readDouble(KEY_DELIVERY_FEE, LEGACY_KEY_DELIVERY_FEE, null, DEFAULT_DELIVERY_FEE)
 
     fun setDeliveryFee(deliveryFee: Double) = writeDouble(KEY_DELIVERY_FEE, deliveryFee)
+
+    /** Lan nhap truoc dung che do "tong so gio" hay "khung gio"; mo app lai van giu lua chon. */
+    fun isTotalHoursMode(): Boolean = prefs.getBoolean(KEY_TOTAL_HOURS_MODE, false)
+
+    fun setTotalHoursMode(enabled: Boolean) {
+        prefs.edit { putBoolean(KEY_TOTAL_HOURS_MODE, enabled) }
+    }
 
     fun resetToDefaults() {
         prefs.edit {

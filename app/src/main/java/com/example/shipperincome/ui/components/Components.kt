@@ -1,6 +1,7 @@
 package com.example.shipperincome.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -21,6 +22,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -44,9 +46,11 @@ import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberDateRangePickerState
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.AnnotatedString
@@ -130,6 +134,22 @@ fun SectionCard(
             content()
         }
     }
+}
+
+/**
+ * Dai nen sau thanh trang thai, hien dan khi noi dung da cuon khoi dau trang
+ * de chu/the khong troi len duoi dong ho va icon he thong.
+ */
+@Composable
+fun StatusBarScrim(visible: Boolean, modifier: Modifier = Modifier) {
+    val alpha by animateFloatAsState(if (visible) 1f else 0f, label = "scrim")
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .windowInsetsTopHeight(WindowInsets.statusBars)
+            .graphicsLayer { this.alpha = alpha }
+            .background(AppTheme.extended.statusBarScrim)
+    )
 }
 
 /** O so lieu nho trong the noi bat (nen trong suot tren gradient). */

@@ -3,6 +3,7 @@ package com.example.shipperincome.ui.screen
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -53,6 +54,7 @@ import com.example.shipperincome.ui.components.HeroHeader
 import com.example.shipperincome.ui.components.LocalSnackbarHostState
 import com.example.shipperincome.ui.components.MetricRow
 import com.example.shipperincome.ui.components.SectionCard
+import com.example.shipperincome.ui.components.StatusBarScrim
 import com.example.shipperincome.ui.components.ThousandsSeparatorTransformation
 import com.example.shipperincome.ui.theme.AppTheme
 import com.example.shipperincome.ui.viewmodel.SettingsViewModel
@@ -110,11 +112,14 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel, shiftViewModel: ShiftVi
         }
     }
 
+    val scrollState = rememberScrollState()
+
+    Box(Modifier.fillMaxSize()) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .imePadding()
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(scrollState)
             .padding(bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -243,6 +248,9 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel, shiftViewModel: ShiftVi
             HorizontalDivider(Modifier.padding(vertical = 4.dp))
             MetricRow("Số ca đã lưu", "${shifts.size}")
         }
+    }
+
+    StatusBarScrim(visible = scrollState.value > 0)
     }
 
     if (settingsViewModel.showResetConfirmDialog) {

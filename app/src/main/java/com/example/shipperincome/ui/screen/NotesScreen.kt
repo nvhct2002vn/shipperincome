@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -73,6 +74,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -97,6 +99,7 @@ import com.example.shipperincome.ui.components.ErrorBanner
 import com.example.shipperincome.ui.components.HeroHeader
 import com.example.shipperincome.ui.components.LocalSnackbarHostState
 import com.example.shipperincome.ui.components.SectionCard
+import com.example.shipperincome.ui.components.StatusBarScrim
 import com.example.shipperincome.ui.theme.AppTheme
 import com.example.shipperincome.ui.viewmodel.GpsState
 import com.example.shipperincome.ui.viewmodel.NoteWithDistance
@@ -165,7 +168,12 @@ fun NotesScreen(notesViewModel: NotesViewModel) {
         notesViewModel.messages.collect { snackbar.showSnackbar(it, withDismissAction = true) }
     }
 
+    val listState = rememberLazyListState()
+    val scrolled by remember { derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0 } }
+
+    Box(Modifier.fillMaxSize()) {
     LazyColumn(
+        state = listState,
         modifier = Modifier
             .fillMaxSize()
             .imePadding(),
@@ -275,6 +283,9 @@ fun NotesScreen(notesViewModel: NotesViewModel) {
                 )
             }
         }
+    }
+
+    StatusBarScrim(visible = scrolled)
     }
 
     noteToDelete?.let { note ->

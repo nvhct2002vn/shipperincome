@@ -20,8 +20,20 @@ data class Shift(
     val normalMissionIncome: Double = 0.0,
     val plusTaxRateSnapshot: Double = 0.057,
     val normalTaxRateSnapshot: Double = 0.057,
-    val deliveryFeeSnapshot: Double = 100.0
+    val deliveryFeeSnapshot: Double = 100.0,
+    /** Khi nhap thang tong so gio (khong theo khung gio): so phut lam viec; startTime/endTime de trong. */
+    val durationMinutes: Int? = null
 ) {
+    val isTotalHoursEntry: Boolean
+        get() = durationMinutes != null
+
+    /** "08:00 – 12:30", hoac "Tổng 8h30" khi nhap thang so gio. */
+    fun timeLabel(): String = durationMinutes?.let { m ->
+        val h = m / 60
+        val min = m % 60
+        if (min == 0) "Tổng ${h}h" else "Tổng ${h}h%02d".format(min)
+    } ?: "${startTime.take(5)} – ${endTime.take(5)}"
+
     fun calculatePlusGrossIncome(): Double = plusGrossIncome + plusMissionIncome
 
     fun calculateNormalGrossIncome(): Double = normalGrossIncome + normalMissionIncome
@@ -46,6 +58,7 @@ data class Shift(
     fun calculateNetIncome(): Double = calculatePlusNetIncome() + calculateNormalNetIncome()
 
     fun calculateDurationHours(): Double {
+        durationMinutes?.let { return it / 60.0 }
         try {
             val start = LocalTime.parse(startTime)
             val end = LocalTime.parse(endTime)

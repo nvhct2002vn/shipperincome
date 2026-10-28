@@ -83,6 +83,21 @@ class ShiftRepositoryTest {
     }
 
     @Test
+    fun totalHoursShiftRoundTrips() = runBlocking {
+        val repo = ShiftRepository(tmp.root)
+        val total = Shift(id = "t", date = "2026-10-29", startTime = "", endTime = "", normalGrossIncome = 80_000.0, durationMinutes = 510)
+        repo.saveAllShifts(listOf(total, shift("r")))
+
+        val loaded = repo.loadAllShifts().shifts
+        val t = loaded.first { it.id == "t" }
+        assertEquals(510, t.durationMinutes)
+        assertEquals(8.5, t.calculateDurationHours(), 0.0001)
+        assertEquals("Tổng 8h30", t.timeLabel())
+        assertNull(loaded.first { it.id == "r" }.durationMinutes)
+        assertEquals("10:00 – 12:00", loaded.first { it.id == "r" }.timeLabel())
+    }
+
+    @Test
     fun missingFileLoadsEmpty() = runBlocking {
         val result = ShiftRepository(tmp.root).loadAllShifts()
         assertTrue(result.shifts.isEmpty())
