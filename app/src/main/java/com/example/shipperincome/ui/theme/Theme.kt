@@ -1,107 +1,166 @@
 package com.example.shipperincome.ui.theme
 
-import android.app.Activity
-import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.material.MaterialTheme
-import androidx.compose.material.darkColors
-import androidx.compose.material.lightColors
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
+import androidx.compose.material3.Typography
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.SideEffect
-import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
-import androidx.core.view.WindowCompat
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
-// Define Color Schemes using Material 2 colors
-private val DarkColorPalette = darkColors(
-    primary = Brown, // Màu nâu làm màu chính tối
-    primaryVariant = GreenEnd, // Biến thể xanh đậm
-    secondary = Beige, // Màu be làm màu phụ
-    background = Color(0xFF121212), // Nền tối chuẩn
-    surface = Color(0xFF202020), // Bề mặt tối hơn chút
+private val LightColors = lightColorScheme(
+    primary = Green40,
     onPrimary = Color.White,
-    onSecondary = Brown,
-    onBackground = Beige,
-    onSurface = Beige.copy(alpha = 0.9f),
-    error = RedDark
-    // Bạn có thể tùy chỉnh thêm các màu khác onError, secondaryVariant...
+    primaryContainer = Green90,
+    onPrimaryContainer = Green10,
+    secondary = Brown40,
+    onSecondary = Color.White,
+    secondaryContainer = Brown90,
+    onSecondaryContainer = Brown10,
+    tertiary = Teal40,
+    onTertiary = Color.White,
+    tertiaryContainer = Teal90,
+    onTertiaryContainer = Teal10,
+    error = Red40,
+    onError = Color.White,
+    errorContainer = Red90,
+    onErrorContainer = Red10,
+    background = NeutralLight,
+    onBackground = NeutralLightOn,
+    surface = NeutralLight,
+    onSurface = NeutralLightOn,
+    surfaceVariant = NeutralVariantLight,
+    onSurfaceVariant = NeutralVariantLightOn,
+    outline = OutlineLight,
+    outlineVariant = OutlineVariantLight,
+    surfaceContainerLowest = Color.White,
+    surfaceContainerLow = Color(0xFFEFF5F0),
+    surfaceContainer = Color(0xFFE9EFEA),
+    surfaceContainerHigh = Color(0xFFE4EAE5),
+    surfaceContainerHighest = Color(0xFFDEE4DF)
 )
 
-private val LightColorPalette = lightColors(
-    primary = Brown, // Màu nâu làm màu chính sáng
-    primaryVariant = GreenEnd, // Biến thể xanh đậm
-    secondary = GreenStart, // Xanh lá nhạt làm màu phụ
-    background = Color.White, // Nền trắng sáng
-    surface = Beige, // Bề mặt màu Be
-    onPrimary = Color.White,
-    onSecondary = Brown, // Chữ/icon trên nền xanh lá nhạt
-    onBackground = Color.Black, // Chữ đen trên nền trắng
-    onSurface = Brown, // Chữ/icon trên nền Be
-    error = RedDark
+private val DarkColors = darkColorScheme(
+    primary = Green80,
+    onPrimary = Green20,
+    primaryContainer = Green30,
+    onPrimaryContainer = Green90,
+    secondary = Brown80,
+    onSecondary = Brown20,
+    secondaryContainer = Brown30,
+    onSecondaryContainer = Brown90,
+    tertiary = Teal80,
+    onTertiary = Teal20,
+    tertiaryContainer = Teal30,
+    onTertiaryContainer = Teal90,
+    error = Red80,
+    onError = Red20,
+    errorContainer = Red30,
+    onErrorContainer = Red90,
+    background = NeutralDark,
+    onBackground = NeutralDarkOn,
+    surface = NeutralDark,
+    onSurface = NeutralDarkOn,
+    surfaceVariant = NeutralVariantDark,
+    onSurfaceVariant = NeutralVariantDarkOn,
+    outline = OutlineDark,
+    outlineVariant = OutlineVariantDark,
+    surfaceContainerLowest = Color(0xFF0A0F0D),
+    surfaceContainerLow = Color(0xFF171D1A),
+    surfaceContainer = Color(0xFF1B211E),
+    surfaceContainerHigh = Color(0xFF252B28),
+    surfaceContainerHighest = Color(0xFF303633)
+)
 
-    /* Other default colors to override
-    background = Color(0xFFFFFBFE),
-    surface = Color(0xFFFFFBFE),
-    onPrimary = Color.White,
-    onSecondary = Color.White,
-    onTertiary = Color.White,
-    onBackground = Color(0xFF1C1B1F),
-    onSurface = Color(0xFF1C1B1F),
-    */
+/** Mau mo rong ngoai bang M3: mau tung loai thu nhap va gradient cho the noi bat. */
+@Immutable
+data class ExtendedColors(
+    val plus: Color,
+    val normal: Color,
+    val heroGradient: Brush,
+    val onHero: Color,
+    val statusBarScrim: Color,
+    val isDark: Boolean
+)
+
+val LocalExtendedColors = staticCompositionLocalOf {
+    ExtendedColors(
+        plus = PlusLight,
+        normal = NormalLight,
+        heroGradient = Brush.linearGradient(listOf(Green40, Teal40)),
+        onHero = Color.White,
+        statusBarScrim = Green40,
+        isDark = false
+    )
+}
+
+private val AppTypography = Typography().let { base ->
+    base.copy(
+        displaySmall = base.displaySmall.copy(fontWeight = FontWeight.Bold),
+        headlineMedium = base.headlineMedium.copy(fontWeight = FontWeight.Bold),
+        headlineSmall = base.headlineSmall.copy(fontWeight = FontWeight.Bold),
+        titleLarge = base.titleLarge.copy(fontWeight = FontWeight.Bold),
+        titleMedium = base.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+        labelLarge = base.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+        bodyLarge = TextStyle(fontSize = 16.sp, lineHeight = 22.sp),
+        bodyMedium = TextStyle(fontSize = 14.sp, lineHeight = 20.sp)
+    )
+}
+
+private val AppShapes = Shapes(
+    extraSmall = RoundedCornerShape(8.dp),
+    small = RoundedCornerShape(12.dp),
+    medium = RoundedCornerShape(16.dp),
+    large = RoundedCornerShape(24.dp),
+    extraLarge = RoundedCornerShape(32.dp)
 )
 
 @Composable
 fun ShipperIncomeTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    // Dynamic color is available on Android 12+ - Tắt dynamic color vì dùng màu tùy chỉnh
-    // dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
-    val colors = if (darkTheme) {
-        DarkColorPalette
+    val extended = if (darkTheme) {
+        ExtendedColors(
+            plus = PlusDark,
+            normal = NormalDark,
+            heroGradient = Brush.linearGradient(listOf(Green30, Teal30)),
+            onHero = Green90,
+            statusBarScrim = Green30,
+            isDark = true
+        )
     } else {
-        LightColorPalette
+        ExtendedColors(
+            plus = PlusLight,
+            normal = NormalLight,
+            heroGradient = Brush.linearGradient(listOf(Green40, Teal40)),
+            onHero = Color.White,
+            statusBarScrim = Green40,
+            isDark = false
+        )
     }
 
-    // Tắt Dynamic Color nếu dùng Material 3
-    /*
-    val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        }
-        darkTheme -> DarkColorScheme
-        else -> LightColorScheme
+    CompositionLocalProvider(LocalExtendedColors provides extended) {
+        MaterialTheme(
+            colorScheme = if (darkTheme) DarkColors else LightColors,
+            typography = AppTypography,
+            shapes = AppShapes,
+            content = content
+        )
     }
-    */
+}
 
-    val view = LocalView.current
-    if (!view.isInEditMode) {
-        SideEffect {
-            val window = (view.context as Activity).window
-            // Đặt màu thanh trạng thái (status bar) - Có thể tùy chỉnh màu khác
-            window.statusBarColor = colors.primaryVariant.toArgb() // Hoặc màu gradient? (Khó hơn)
-            // Đặt icon thanh trạng thái sáng hay tối
-            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme // true nếu nền sáng, false nếu nền tối
-        }
-    }
-
-    // Sử dụng MaterialTheme của Material 2
-    MaterialTheme(
-        colors = colors,
-        typography = Typography, // Sử dụng Typography từ Type.kt
-        shapes = Shapes, // Sử dụng Shapes từ Shape.kt (Mặc định hoặc tùy chỉnh)
-        content = content
-    )
-
-    // Nếu dùng Material 3
-    /*
-    androidx.compose.material3.MaterialTheme(
-        colorScheme = colorScheme,
-        typography = Typography,
-        content = content
-    )
-    */
+object AppTheme {
+    val extended: ExtendedColors
+        @Composable get() = LocalExtendedColors.current
 }
