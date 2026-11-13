@@ -8,8 +8,14 @@ import android.content.Intent
 import android.location.Location
 import android.provider.Settings
 import android.view.MotionEvent
+import android.util.Log
+import android.webkit.ConsoleMessage
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.webkit.WebViewAssetLoader
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -134,7 +140,6 @@ fun NotesScreen(notesViewModel: NotesViewModel) {
     val monitorRunning by notesViewModel.monitorRunning.collectAsStateWithLifecycle()
 
     var noteToDelete by remember { mutableStateOf<LocationNote?>(null) }
-    var showImportDialog by remember { mutableStateOf(false) }
     var showMap by rememberSaveable { mutableStateOf(false) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -185,6 +190,8 @@ fun NotesScreen(notesViewModel: NotesViewModel) {
                 state = notesViewModel.gpsState,
                 location = notesViewModel.currentLocation,
                 total = notesViewModel.totalNoteCount,
+                monitorRunning = monitorRunning,
+                onMonitorChange = notesViewModel::setMonitorEnabled,
                 onRequestPermission = { permissionLauncher.launch(LOCATION_PERMISSIONS) },
                 onOpenSettings = { context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)) }
             )
@@ -204,32 +211,6 @@ fun NotesScreen(notesViewModel: NotesViewModel) {
             NoteEditorCard(
                 notesViewModel = notesViewModel,
                 onSave = { notesViewModel.saveNote { focusManager.clearFocus() } },
-                modifier = Modifier.padding(horizontal = 16.dp)
-            )
-        }
-
-        item(key = "monitor") {
-            MonitorCard(
-                notesViewModel = notesViewModel,
-                running = monitorRunning,
-                modifier = Modifier.padding(horizontal = 16.dp)
-            )
-        }
-
-        item(key = "data") {
-            DataCard(
-                onExport = {
-                    scope.launch {
-                        notesViewModel.exportJson()?.let { json ->
-                            val sendIntent = Intent(Intent.ACTION_SEND).apply {
-                                putExtra(Intent.EXTRA_TEXT, json)
-                                type = "text/plain"
-                            }
-                            context.startActivity(Intent.createChooser(sendIntent, "Lưu hoặc chia sẻ dữ liệu"))
-                        }
-                    }
-                },
-                onImport = { showImportDialog = true },
                 modifier = Modifier.padding(horizontal = 16.dp)
             )
         }
@@ -307,15 +288,6 @@ fun NotesScreen(notesViewModel: NotesViewModel) {
         )
     }
 
-    if (showImportDialog) {
-        ImportDialog(
-            onDismiss = { showImportDialog = false },
-            onImport = { json ->
-                notesViewModel.importJson(json)
-                showImportDialog = false
-            }
-        )
-    }
 }
 
 @Composable
@@ -323,6 +295,8 @@ private fun NotesHeader(
     state: GpsState,
     location: Location?,
     total: Int,
+    monitorRunning: Boolean,
+    onMonitorChange: (Boolean) -> Unit,
     onRequestPermission: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
@@ -389,6 +363,43 @@ private fun NotesHeader(
                 }
             }
         }
+        Spacer(Modifier.height(10.dp))
+        // Cong tac nhanh; thoi gian cho giua 2 lan nhac chinh trong Cai dat > Ghi chu.
+        Surface(
+            onClick = { onMonitorChange(!monitorRunning) },
+            shape = MaterialTheme.shapes.large,
+            color = onHero.copy(alpha = 0.14f)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .background(onHero.copy(alpha = 0.18f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Outlined.NotificationsActive, contentDescription = null, tint = onHero)
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        if (monitorRunning) "Nhắc nền đang bật" else "Nhắc nền đang tắt",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = onHero
+                    )
+                    Text(
+                        if (monitorRunning) "Báo khi đến gần địa điểm đã lưu" else "Bật để được báo cả khi tắt màn hình",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = onHero.copy(alpha = 0.8f)
+                    )
+                }
+                Switch(checked = monitorRunning, onCheckedChange = onMonitorChange)
+            }
+        }
     }
 }
 
@@ -437,10 +448,21 @@ private fun MapCard(
                     WebView(ctx).apply {
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
-                        // Chi doc file trong assets (file:///android_asset luon duoc phep); tat quyen doc file khac.
                         settings.allowFileAccess = false
                         settings.allowContentAccess = false
                         clipToOutline = true
+
+                        // Phuc vu map.html qua https://appassets.androidplatform.net thay vi file://:
+                        // trang co origin https that nen may chu tile khong tu choi, va khong can mo quyen doc file.
+                        val assetLoader = WebViewAssetLoader.Builder()
+                            .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(ctx))
+                            .build()
+                        webChromeClient = object : WebChromeClient() {
+                            override fun onConsoleMessage(message: ConsoleMessage): Boolean {
+                                Log.d(MAP_TAG, "${message.message()} (${message.sourceId()}:${message.lineNumber()})")
+                                return true
+                            }
+                        }
 
                         // WebView nam trong LazyColumn: neu khong chan, moi cu vuot deu bi
                         // danh sach ben ngoai cuop mat va khong keo duoc ban do.
@@ -454,11 +476,16 @@ private fun MapCard(
                             false
                         }
                         webViewClient = object : WebViewClient() {
+                            override fun shouldInterceptRequest(
+                                view: WebView,
+                                request: WebResourceRequest
+                            ): WebResourceResponse? = assetLoader.shouldInterceptRequest(request.url)
+
                             override fun onPageFinished(view: WebView, url: String) {
                                 view.renderNotes(view.tag as? String)
                             }
                         }
-                        loadUrl("file:///android_asset/map.html")
+                        loadUrl(MAP_URL)
                     }
                 },
                 update = { webView ->
@@ -467,7 +494,7 @@ private fun MapCard(
                 }
             )
             Text(
-                "Chạm vào điểm để xem ghi chú. Bản đồ © OpenStreetMap, CARTO.",
+                "Chạm vào điểm để xem ghi chú. Bản đồ © OpenStreetMap.",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 8.dp)
@@ -475,6 +502,9 @@ private fun MapCard(
         }
     }
 }
+
+private const val MAP_TAG = "MapWebView"
+private const val MAP_URL = "https://appassets.androidplatform.net/assets/map.html"
 
 /** update() co the chay truoc khi trang load xong, luc do renderNotes chua ton tai. */
 private fun WebView.renderNotes(payload: String?) {
@@ -605,22 +635,15 @@ private fun NoteEditorCard(notesViewModel: NotesViewModel, onSave: () -> Unit, m
 }
 
 @Composable
-private fun MonitorCard(notesViewModel: NotesViewModel, running: Boolean, modifier: Modifier = Modifier) {
-    SectionCard(
-        modifier = modifier,
-        title = "Nhắc nền",
-        icon = Icons.Outlined.NotificationsActive,
-        trailing = {
-            Switch(checked = running, onCheckedChange = notesViewModel::setMonitorEnabled)
-        }
-    ) {
+internal fun MonitorCard(notesViewModel: NotesViewModel, modifier: Modifier = Modifier) {
+    // Cong tac bat/tat nam o dau man Ghi chu; o day chi chinh thong so.
+    SectionCard(modifier = modifier, title = "Nhắc nền", icon = Icons.Outlined.NotificationsActive) {
         Text(
-            if (running) "Đang chạy · ứng dụng sẽ báo khi bạn đến gần địa điểm đã lưu."
-            else "Bật để nhận thông báo khi đến gần địa điểm đã lưu, kể cả khi tắt màn hình.",
+            "Bật/tắt nhắc nền ở đầu màn Ghi chú. Sau khi nhắc một địa điểm, ứng dụng chờ chừng này phút mới nhắc lại địa điểm đó.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        HorizontalDivider(Modifier.padding(vertical = 16.dp))
+        Spacer(Modifier.height(16.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(
                 value = notesViewModel.timeoutMinutesInput,
@@ -639,7 +662,7 @@ private fun MonitorCard(notesViewModel: NotesViewModel, running: Boolean, modifi
 }
 
 @Composable
-private fun DataCard(onExport: () -> Unit, onImport: () -> Unit, modifier: Modifier = Modifier) {
+internal fun DataCard(onExport: () -> Unit, onImport: () -> Unit, modifier: Modifier = Modifier) {
     SectionCard(modifier = modifier, title = "Chuyển dữ liệu", icon = Icons.Outlined.SyncAlt) {
         Text(
             "Sao lưu địa điểm sang máy khác bằng đoạn mã JSON.",
@@ -721,7 +744,7 @@ private fun NoteItem(
 }
 
 @Composable
-private fun ImportDialog(onDismiss: () -> Unit, onImport: (String) -> Unit) {
+internal fun ImportDialog(onDismiss: () -> Unit, onImport: (String) -> Unit) {
     val context = LocalContext.current
     var text by remember {
         mutableStateOf(

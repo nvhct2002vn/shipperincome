@@ -31,7 +31,10 @@ import androidx.compose.material.icons.outlined.DateRange
 import androidx.compose.material.icons.outlined.DonutSmall
 import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.ExpandMore
+import androidx.compose.material.icons.outlined.CalendarViewWeek
+import androidx.compose.material.icons.outlined.Flag
 import androidx.compose.material.icons.outlined.QueryStats
+import androidx.compose.material.icons.outlined.Summarize
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
@@ -52,6 +55,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.shipperincome.ui.components.ColorDot
@@ -67,9 +71,12 @@ import com.example.shipperincome.ui.components.StatusBarScrim
 import com.example.shipperincome.ui.theme.AppTheme
 import com.example.shipperincome.ui.viewmodel.ChartPoint
 import com.example.shipperincome.ui.viewmodel.DailySummary
+import com.example.shipperincome.ui.viewmodel.GoalProgress
 import com.example.shipperincome.ui.viewmodel.ShiftViewModel
 import com.example.shipperincome.ui.viewmodel.StatsPeriod
 import com.example.shipperincome.ui.viewmodel.StatsSummary
+import com.example.shipperincome.ui.viewmodel.WeekdayStat
+import java.time.DayOfWeek
 import com.example.shipperincome.utils.DateShort
 import com.example.shipperincome.utils.DateWithShortWeekday
 import com.example.shipperincome.utils.formatCompactCurrency
@@ -90,6 +97,7 @@ import com.patrykandpatrick.vico.core.cartesian.data.CartesianChartModelProducer
 import com.patrykandpatrick.vico.core.cartesian.data.CartesianValueFormatter
 import com.patrykandpatrick.vico.core.cartesian.data.columnSeries
 import com.patrykandpatrick.vico.core.cartesian.layer.ColumnCartesianLayer
+import com.patrykandpatrick.vico.core.common.data.ExtraStore
 import com.patrykandpatrick.vico.core.common.shape.CorneredShape
 
 @Composable
@@ -160,6 +168,18 @@ fun StatsScreen(viewModel: ShiftViewModel) {
             }
         }
 
+        // Doc lai muc tieu moi khi du lieu/giai doan doi hoac khi quay lai man hinh (co the vua sua o Cai dat).
+        val goal = if (data == null) null else viewModel.goalFor(period)
+        if (goal != null) {
+            item(key = "goal") {
+                GoalCard(
+                    goal = goal,
+                    title = if (period == StatsPeriod.CURRENT_WEEK) "Mục tiêu tuần" else "Mục tiêu tháng",
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+            }
+        }
+
         if (summary == null) {
             item(key = "empty") {
                 EmptyState(
@@ -178,7 +198,16 @@ fun StatsScreen(viewModel: ShiftViewModel) {
                     )
                 }
             }
-            item(key = "breakdown") { BreakdownCard(summary, Modifier.padding(horizontal = 16.dp)) }
+            if (data.weekdays.isNotEmpty() && data.days.size >= 2) {
+                item(key = "weekdays") { WeekdayCard(data.weekdays, Modifier.padding(horizontal = 16.dp)) }
+            }
+            item(key = "breakdown") {
+                if (viewModel.hidePlus && summary.totalPlusGrossIncome <= 0.0) {
+                    OverviewCard(summary, Modifier.padding(horizontal = 16.dp))
+                } else {
+                    BreakdownCard(summary, Modifier.padding(horizontal = 16.dp))
+                }
+            }
             item(key = "days_title") {
                 Text(
                     "Chi tiết từng ngày (${data.days.size})",
@@ -187,7 +216,7 @@ fun StatsScreen(viewModel: ShiftViewModel) {
                 )
             }
             items(data.days, key = { it.date.toString() }) { day ->
-                DayRow(day, Modifier.padding(horizontal = 16.dp))
+                DayRow(day, hidePlus = viewModel.hidePlus, modifier = Modifier.padding(horizontal = 16.dp))
             }
         }
     }
@@ -197,7 +226,8 @@ fun StatsScreen(viewModel: ShiftViewModel) {
 
     if (showDayPicker) {
         SingleDatePickerDialog(
-            initial = data?.start ?: java.time.LocalDate.now(),
+            // Mac dinh hom nay; chi giu ngay cu khi dang o che do "Chon ngay" (tranh nhay ve ngay dau tien khi dang xem "Tat ca").
+            initial = data?.start?.takeIf { period == StatsPeriod.SPECIFIC_DAY } ?: java.time.LocalDate.now(),
             onDismiss = { showDayPicker = false },
             onConfirm = { viewModel.updateStatsPeriod(StatsPeriod.SPECIFIC_DAY, it, it) }
         )
@@ -244,17 +274,24 @@ private fun StatsHeader(summary: StatsSummary?, rangeLabel: String?) {
     }
 }
 
+private val ChartLabelsKey = ExtraStore.Key<List<String>>()
+
 @Composable
 private fun ChartCard(points: List<ChartPoint>, byMonth: Boolean, modifier: Modifier = Modifier) {
     val modelProducer = remember { CartesianChartModelProducer() }
     LaunchedEffect(points) {
         modelProducer.runTransaction {
             columnSeries { series(points.map { it.netIncome }) }
+            // Nhan di cung model: model cap nhat bat dong bo, neu doc tu `points` thi luc doi giai doan
+            // so cot cu va so nhan moi lech nhau -> nhan rong -> Vico nem IllegalStateException.
+            extras { it[ChartLabelsKey] = points.map { point -> point.label } }
         }
     }
-    val labels = points.map { it.label }
-    val bottomFormatter = remember(labels) {
-        CartesianValueFormatter { _, x, _ -> labels.getOrNull(x.toInt()) ?: "" }
+    val bottomFormatter = remember {
+        CartesianValueFormatter { context, x, _ ->
+            // Vico cam chuoi rong, nen luon tra ve it nhat mot dau cach.
+            context.model.extraStore.getOrNull(ChartLabelsKey)?.getOrNull(x.toInt()) ?: " "
+        }
     }
     val startFormatter = remember {
         CartesianValueFormatter { _, y, _ -> formatCompactCurrency(y) }
@@ -329,6 +366,171 @@ private fun BreakdownCard(summary: StatsSummary, modifier: Modifier = Modifier) 
 }
 
 @Composable
+private fun GoalCard(goal: GoalProgress, title: String, modifier: Modifier = Modifier) {
+    val animated by animateFloatAsState(goal.fraction, tween(700), label = "goal")
+    val color = MaterialTheme.colorScheme.primary
+    SectionCard(
+        modifier = modifier,
+        title = title,
+        icon = Icons.Outlined.Flag,
+        trailing = { Text("${goal.percent}%", style = MaterialTheme.typography.titleMedium, color = color) }
+    ) {
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(formatCurrency(goal.earned), style = MaterialTheme.typography.headlineSmall, color = color)
+            Spacer(Modifier.width(6.dp))
+            Text(
+                "/ ${formatCurrency(goal.target)}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 3.dp)
+            )
+        }
+        Spacer(Modifier.height(10.dp))
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(12.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+        ) {
+            if (animated > 0f) {
+                Box(
+                    Modifier
+                        .fillMaxHeight()
+                        .fillMaxWidth(animated.coerceAtLeast(0.02f))
+                        .clip(CircleShape)
+                        .background(color)
+                )
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        Text(
+            when {
+                goal.isDone -> "Đã đạt mục tiêu" +
+                    if (goal.earned > goal.target) ", vượt ${formatCurrency(goal.earned - goal.target)}. Quá đỉnh!" else ". Quá đỉnh!"
+                goal.daysRemaining == 0 -> "Còn thiếu ${formatCurrency(goal.remaining)}."
+                else -> "Còn ${formatCurrency(goal.remaining)} · cần khoảng ${formatCurrency(goal.perDayNeeded)} mỗi ngày " +
+                    "trong ${goal.daysRemaining} ngày còn lại."
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+/** Thay cho the "Plus va thuong" khi da an Plus va giai doan khong co tien Plus. */
+@Composable
+private fun OverviewCard(summary: StatsSummary, modifier: Modifier = Modifier) {
+    SectionCard(modifier = modifier, title = "Tổng quan", icon = Icons.Outlined.Summarize) {
+        MetricRow("Tổng trước trừ", formatCurrency(summary.totalGrossIncome))
+        MetricRow("Thuế đã trừ", formatCurrency(summary.totalGrossIncome - summary.totalNetIncome))
+        MetricRow("Thực nhận", formatCurrency(summary.totalNetIncome), emphasize = true, valueColor = MaterialTheme.colorScheme.primary)
+        HorizontalDivider(Modifier.padding(vertical = 12.dp))
+        MetricRow("Số ngày làm", "${summary.totalDays} ngày")
+        MetricRow("Số ca", "${summary.totalShifts} ca")
+        MetricRow("Tổng giờ làm", formatDuration(summary.totalHours))
+        if (summary.totalDays > 0) {
+            MetricRow("TB mỗi ngày làm", formatCurrency(summary.totalNetIncome / summary.totalDays))
+        }
+    }
+}
+
+private val WeekdayShort = mapOf(
+    DayOfWeek.MONDAY to "T2", DayOfWeek.TUESDAY to "T3", DayOfWeek.WEDNESDAY to "T4",
+    DayOfWeek.THURSDAY to "T5", DayOfWeek.FRIDAY to "T6", DayOfWeek.SATURDAY to "T7", DayOfWeek.SUNDAY to "CN"
+)
+private val WeekdayFull = mapOf(
+    DayOfWeek.MONDAY to "Thứ hai", DayOfWeek.TUESDAY to "Thứ ba", DayOfWeek.WEDNESDAY to "Thứ tư",
+    DayOfWeek.THURSDAY to "Thứ năm", DayOfWeek.FRIDAY to "Thứ sáu", DayOfWeek.SATURDAY to "Thứ bảy", DayOfWeek.SUNDAY to "Chủ nhật"
+)
+
+@Composable
+private fun WeekdayCard(stats: List<WeekdayStat>, modifier: Modifier = Modifier) {
+    val worked = stats.filter { it.workedDays > 0 }
+    val best = worked.maxByOrNull { it.avgNetPerDay }
+    val max = best?.avgNetPerDay ?: 0.0
+    SectionCard(modifier = modifier, title = "Theo thứ trong tuần", icon = Icons.Outlined.CalendarViewWeek) {
+        if (best != null && worked.size > 1) {
+            Text(
+                "Chạy được nhiều nhất vào ${WeekdayFull[best.day]?.lowercase()}: TB ${formatCurrency(best.avgNetPerDay)} mỗi ngày.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(12.dp))
+        }
+        stats.forEach { s ->
+            InsightBarRow(
+                label = WeekdayShort.getValue(s.day),
+                fraction = if (max > 0) (s.avgNetPerDay / max).toFloat() else 0f,
+                highlight = s == best && worked.size > 1,
+                value = if (s.workedDays > 0) formatCurrency(s.avgNetPerDay) else "—",
+                detail = if (s.workedDays > 0) "${s.workedDays} ngày · ${formatCurrency(s.hourlyRate)}/h" else "Chưa chạy"
+            )
+        }
+    }
+}
+
+@Composable
+private fun InsightBarRow(
+    label: String,
+    fraction: Float,
+    highlight: Boolean,
+    value: String,
+    detail: String
+) {
+    val animated by animateFloatAsState(fraction.coerceIn(0f, 1f), tween(600), label = "insightBar")
+    val barColor = MaterialTheme.colorScheme.primary
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelLarge,
+            color = if (highlight) barColor else MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.width(36.dp)
+        )
+        Column(Modifier.weight(1f)) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(10.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+            ) {
+                if (animated > 0f) {
+                    Box(
+                        Modifier
+                            .fillMaxHeight()
+                            .fillMaxWidth(animated.coerceAtLeast(0.02f))
+                            .clip(CircleShape)
+                            .background(if (highlight) barColor else barColor.copy(alpha = 0.45f))
+                    )
+                }
+            }
+            Text(
+                detail,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 2.dp)
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        // Cot so rong co dinh de cac thanh cung do dai, so sanh bang mat duoc.
+        Text(
+            value,
+            style = MaterialTheme.typography.titleSmall,
+            color = if (highlight) barColor else MaterialTheme.colorScheme.onSurface,
+            textAlign = TextAlign.End,
+            maxLines = 1,
+            modifier = Modifier.width(100.dp)
+        )
+    }
+}
+
+@Composable
 private fun LegendItem(color: Color, label: String, value: String, modifier: Modifier = Modifier) {
     Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
         ColorDot(color)
@@ -340,7 +542,7 @@ private fun LegendItem(color: Color, label: String, value: String, modifier: Mod
 }
 
 @Composable
-private fun DayRow(day: DailySummary, modifier: Modifier = Modifier) {
+private fun DayRow(day: DailySummary, hidePlus: Boolean, modifier: Modifier = Modifier) {
     var expanded by rememberSaveable(day.date.toString()) { mutableStateOf(false) }
     val extended = AppTheme.extended
     Card(
@@ -379,10 +581,15 @@ private fun DayRow(day: DailySummary, modifier: Modifier = Modifier) {
             AnimatedVisibility(visible = expanded) {
                 Column(Modifier.padding(top = 8.dp)) {
                     HorizontalDivider(Modifier.padding(bottom = 8.dp))
-                    MetricRow("Đơn Plus", "${day.totalDeliveries}")
-                    MetricRow("Plus trước trừ / thực nhận", "${formatCurrency(day.totalPlusGrossIncome)} / ${formatCurrency(day.totalPlusNetIncome)}", valueColor = extended.plus)
-                    MetricRow("Thường trước trừ / thực nhận", "${formatCurrency(day.totalNormalGrossIncome)} / ${formatCurrency(day.totalNormalNetIncome)}", valueColor = extended.normal)
-                    MetricRow("Tổng trước trừ", formatCurrency(day.totalGrossIncome))
+                    if (hidePlus && day.totalPlusGrossIncome <= 0.0) {
+                        MetricRow("Tổng trước trừ", formatCurrency(day.totalGrossIncome))
+                        MetricRow("Thuế đã trừ", formatCurrency(day.totalGrossIncome - day.totalNetIncome))
+                    } else {
+                        MetricRow("Đơn Plus", "${day.totalDeliveries}")
+                        MetricRow("Plus trước trừ / thực nhận", "${formatCurrency(day.totalPlusGrossIncome)} / ${formatCurrency(day.totalPlusNetIncome)}", valueColor = extended.plus)
+                        MetricRow("Thường trước trừ / thực nhận", "${formatCurrency(day.totalNormalGrossIncome)} / ${formatCurrency(day.totalNormalNetIncome)}", valueColor = extended.normal)
+                        MetricRow("Tổng trước trừ", formatCurrency(day.totalGrossIncome))
+                    }
                 }
             }
         }

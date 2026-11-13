@@ -66,29 +66,5 @@ fun groupDigits(digits: String): String {
     return sb.toString()
 }
 
-/**
- * Doc so gio nguoi dung go: "8", "8.5", "8,5", "8:30", "8h30", "8h", "45p" (phut).
- * Tra ve so phut, hoac null neu khong hop le.
- */
-fun parseHoursToMinutes(raw: String): Int? {
-    val s = raw.trim().lowercase().replace(" ", "")
-    if (s.isEmpty()) return null
-    Regex("^(\\d{1,2})[:h](\\d{1,2})?$").matchEntire(s)?.let { m ->
-        val h = m.groupValues[1].toInt()
-        val min = m.groupValues[2].ifEmpty { "0" }.toInt()
-        return if (min < 60) h * 60 + min else null
-    }
-    Regex("^(\\d{1,4})(p|ph|phut|phút|m)$").matchEntire(s)?.let { return it.groupValues[1].toInt() }
-    val hours = s.replace(',', '.').toDoubleOrNull() ?: return null
-    return Math.round(hours * 60).toInt()
-}
-
-/** Hien so phut thanh chuoi de sua lai: 510 -> "8:30", 480 -> "8". */
-fun minutesToHoursInput(minutes: Int): String {
-    val h = minutes / 60
-    val m = minutes % 60
-    return if (m == 0) "$h" else "$h:%02d".format(m)
-}
-
 fun Double.toPlainInput(): String =
     if (this % 1.0 == 0.0) this.toLong().toString() else this.toString()

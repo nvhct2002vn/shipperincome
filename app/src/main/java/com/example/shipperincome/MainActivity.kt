@@ -11,6 +11,7 @@ import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.example.shipperincome.ui.navigation.AppNavigation
 import com.example.shipperincome.ui.theme.ShipperIncomeTheme
 import com.example.shipperincome.ui.viewmodel.ShiftViewModel
+import com.example.shipperincome.widget.QuickEarnWidget
 
 class MainActivity : ComponentActivity() {
 
@@ -28,5 +29,11 @@ class MainActivity : ComponentActivity() {
                 AppNavigation(viewModel = shiftViewModel)
             }
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // Moi lan mo app thi lam moi widget (vd. vua qua ngay moi ma chu ky 30 phut chua toi).
+        QuickEarnWidget.refresh(this)
     }
 }

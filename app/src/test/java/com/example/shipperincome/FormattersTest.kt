@@ -6,8 +6,6 @@ import com.example.shipperincome.utils.formatCurrency
 import com.example.shipperincome.utils.formatDuration
 import com.example.shipperincome.utils.formatDurationShort
 import com.example.shipperincome.utils.groupDigits
-import com.example.shipperincome.utils.minutesToHoursInput
-import com.example.shipperincome.utils.parseHoursToMinutes
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -29,22 +27,6 @@ class FormattersTest {
         assertEquals("2 giờ 0 phút", formatDuration(1.9999))
         assertEquals("8h30", formatDurationShort(8.5))
         assertEquals("3h", formatDurationShort(3.0))
-    }
-
-    @Test
-    fun parsesTotalHoursInput() {
-        assertEquals(480, parseHoursToMinutes("8"))
-        assertEquals(510, parseHoursToMinutes("8.5"))
-        assertEquals(510, parseHoursToMinutes("8,5"))
-        assertEquals(510, parseHoursToMinutes("8:30"))
-        assertEquals(510, parseHoursToMinutes("8h30"))
-        assertEquals(480, parseHoursToMinutes("8h"))
-        assertEquals(45, parseHoursToMinutes("45p"))
-        assertEquals(null, parseHoursToMinutes(""))
-        assertEquals(null, parseHoursToMinutes("8:75"))
-        assertEquals(null, parseHoursToMinutes("abc"))
-        assertEquals("8:30", minutesToHoursInput(510))
-        assertEquals("8", minutesToHoursInput(480))
     }
 
     @Test

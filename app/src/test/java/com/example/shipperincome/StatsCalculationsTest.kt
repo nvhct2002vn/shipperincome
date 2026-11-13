@@ -96,4 +96,23 @@ class StatsCalculationsTest {
         assertEquals(listOf("01/26", "02/26", "03/26"), data.chart.map { it.label })
         assertEquals(listOf(3_000.0, 0.0, 4_000.0), data.chart.map { it.netIncome })
     }
+
+    @Test
+    fun weekdayInsightsAverageOnlyWorkedDays() {
+        // Hai thu bay (24/10 va 31/10) va mot chu nhat (25/10).
+        val shifts = listOf(
+            shift("2026-10-24", 30_000.0),
+            shift("2026-10-31", 50_000.0),
+            shift("2026-10-25", 20_000.0)
+        )
+        val days = shifts.groupBy { it.localDate }.map { (d, s) -> StatsCalculations.summarizeDay(d, s) }
+        val weekdays = StatsCalculations.weekdayStats(days)
+
+        val saturday = weekdays.first { it.day == DayOfWeek.SATURDAY }
+        assertEquals(2, saturday.workedDays)
+        assertEquals(40_000.0, saturday.avgNetPerDay, 0.001)
+        assertEquals(20_000.0, saturday.hourlyRate, 0.001) // 80k / 4h
+        assertEquals(0, weekdays.first { it.day == DayOfWeek.MONDAY }.workedDays)
+        assertEquals(DayOfWeek.MONDAY, weekdays.first().day)
+    }
 }

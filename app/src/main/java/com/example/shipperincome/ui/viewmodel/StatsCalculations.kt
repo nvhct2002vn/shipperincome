@@ -53,13 +53,26 @@ data class StatsSummary(
 /** Mot cot tren bieu do: theo ngay, hoac theo thang khi giai doan qua dai. */
 data class ChartPoint(val label: String, val netIncome: Double)
 
+/** Hieu qua theo thu trong tuan: chi tinh nhung ngay co di lam. */
+data class WeekdayStat(
+    val day: DayOfWeek,
+    val workedDays: Int,
+    val totalHours: Double,
+    val totalNetIncome: Double
+) {
+    val avgNetPerDay: Double get() = if (workedDays > 0) totalNetIncome / workedDays else 0.0
+    val hourlyRate: Double get() = if (totalHours > 0) totalNetIncome / totalHours else 0.0
+}
+
 data class StatsData(
     val start: LocalDate,
     val end: LocalDate,
     val summary: StatsSummary?,
     val days: List<DailySummary>,
     val chart: List<ChartPoint>,
-    val chartByMonth: Boolean
+    val chartByMonth: Boolean,
+    /** Thu Hai -> Chu nhat; rong khi giai doan khong co ca nao. */
+    val weekdays: List<WeekdayStat> = emptyList()
 )
 
 object StatsCalculations {
@@ -161,7 +174,18 @@ object StatsCalculations {
             )
         }
 
-        return StatsData(start, end, summary, days, chartPoints(start, end, days), isMonthlyChart(start, end))
+        return StatsData(
+            start, end, summary, days, chartPoints(start, end, days), isMonthlyChart(start, end),
+            weekdays = if (filtered.isEmpty()) emptyList() else weekdayStats(days)
+        )
+    }
+
+    fun weekdayStats(days: List<DailySummary>): List<WeekdayStat> {
+        val byWeekday = days.groupBy { it.date.dayOfWeek }
+        return DayOfWeek.entries.map { dow ->
+            val inDay = byWeekday[dow].orEmpty()
+            WeekdayStat(dow, inDay.size, inDay.sumOf { it.totalHours }, inDay.sumOf { it.totalNetIncome })
+        }
     }
 
     fun isMonthlyChart(start: LocalDate, end: LocalDate): Boolean =

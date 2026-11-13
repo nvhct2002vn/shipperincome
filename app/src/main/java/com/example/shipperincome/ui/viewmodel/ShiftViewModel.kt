@@ -11,8 +11,8 @@ import com.example.shipperincome.data.model.Shift
 import com.example.shipperincome.data.repository.SettingsRepository
 import com.example.shipperincome.data.repository.ShiftRepository
 import com.example.shipperincome.utils.TimeHm
-import com.example.shipperincome.utils.minutesToHoursInput
-import com.example.shipperincome.utils.parseHoursToMinutes
+import com.example.shipperincome.utils.formatCompactCurrency
+import com.example.shipperincome.widget.QuickEarnWidget
 import com.example.shipperincome.utils.toPlainInput
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
@@ -66,7 +66,12 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
     /** true: nhap thang tong so gio trong ngay; false: chon gio bat dau - ket thuc. */
     var totalHoursMode by mutableStateOf(settingsRepository.isTotalHoursMode())
         private set
-    var totalHoursInput by mutableStateOf("")
+    /** An tab Plus o form nhap va cac dong Plus o thong ke (chinh trong Cai dat). */
+    var hidePlus by mutableStateOf(settingsRepository.isPlusHidden())
+        private set
+    /** O "Gio" va o "Phut" cua che do tong gio, vd. 10 : 10 = 10 gio 10 phut. */
+    var totalHoursPart by mutableStateOf("")
+    var totalMinutesPart by mutableStateOf("")
     var startTimeInput by mutableStateOf("")
     var endTimeInput by mutableStateOf("")
     var deliveryCountInput by mutableStateOf("")
@@ -113,7 +118,7 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
             if (plus + normal + plusMission + normalMission <= 0.0) return null
             val start = parseTime(startTimeInput)
             val end = parseTime(endTimeInput)
-            val totalMinutes = if (totalHoursMode) parseHoursToMinutes(totalHoursInput)?.takeIf { it in 1..MAX_MINUTES } else null
+            val totalMinutes = if (totalHoursMode) enteredTotalMinutes()?.takeIf { it in 1..MAX_MINUTES } else null
             val shift = Shift(
                 date = selectedDate.toString(),
                 startTime = start?.toString() ?: "00:00",
@@ -162,6 +167,7 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             try {
                 repository.saveAllShifts(shifts)
+                QuickEarnWidget.refresh(getApplication())
             } catch (e: Exception) {
                 _messages.send(UiMessage("Không lưu được dữ liệu: ${e.message}"))
             }
@@ -177,7 +183,7 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
 
         val startTime = parseTime(startTimeInput)
         val endTime = parseTime(endTimeInput)
-        val totalMinutes = parseHoursToMinutes(totalHoursInput)
+        val totalMinutes = enteredTotalMinutes()
         val deliveryCount = deliveryCountInput.toIntOrNull() ?: 0
         val plusIncome = plusIncomeInput.toDoubleOrNull() ?: 0.0
         val normalIncome = normalIncomeInput.toDoubleOrNull() ?: 0.0
@@ -187,7 +193,8 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
         val totalNormalIncome = normalIncome + normalMissionIncome
 
         if (totalHoursMode) {
-            if (totalMinutes == null) { inputError = "Nhập số giờ làm, ví dụ 8 hoặc 8:30"; return }
+            if (totalHoursPart.isBlank() && totalMinutesPart.isBlank()) { inputError = "Nhập số giờ làm"; return }
+            if (totalMinutes == null) { inputError = "Số phút phải từ 0 đến 59"; return }
             if (totalMinutes !in 1..MAX_MINUTES) { inputError = "Số giờ phải lớn hơn 0 và không quá 24 giờ"; return }
         } else {
             if (startTime == null) { inputError = "Chọn giờ bắt đầu"; return }
@@ -259,7 +266,28 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
 
         persist(currentShifts)
         clearInputs()
-        _messages.trySend(UiMessage(if (editingId == null) "Đã lưu ca làm" else "Đã cập nhật ca làm"))
+        val saved = if (editingId == null) "Đã lưu ca làm" else "Đã cập nhật ca làm"
+        _messages.trySend(UiMessage(goalSummary(currentShifts)?.let { "$saved · $it" } ?: saved))
+    }
+
+    /** Tien do muc tieu cua giai doan dang xem o Thong ke (chi Tuan nay / Thang nay co muc tieu). */
+    fun goalFor(period: StatsPeriod, shifts: List<Shift> = _allShifts.value): GoalProgress? {
+        val goals = settingsRepository.getIncomeGoals()
+        val today = LocalDate.now()
+        return when (period) {
+            StatsPeriod.CURRENT_WEEK -> GoalCalculations.weekly(goals.weekly, shifts, today)
+            StatsPeriod.CURRENT_MONTH -> GoalCalculations.monthly(goals.monthly, shifts, today)
+            else -> null
+        }
+    }
+
+    /** Mot cau ngan ve muc tieu thang (hoac tuan neu chi dat tuan) de hien kem thong bao luu ca. */
+    private fun goalSummary(shifts: List<Shift>): String? {
+        val (label, progress) = goalFor(StatsPeriod.CURRENT_MONTH, shifts)?.let { "tháng" to it }
+            ?: goalFor(StatsPeriod.CURRENT_WEEK, shifts)?.let { "tuần" to it }
+            ?: return null
+        return if (progress.isDone) "Đã đạt mục tiêu $label!"
+        else "Mục tiêu $label ${progress.percent}%, còn ${formatCompactCurrency(progress.remaining)}"
     }
 
     fun deleteShift(shiftId: String) {
@@ -287,12 +315,13 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
         val minutes = shift.durationMinutes
         if (minutes != null) {
             totalHoursMode = true
-            totalHoursInput = minutesToHoursInput(minutes)
+            setTotalMinutes(minutes)
             startTimeInput = ""
             endTimeInput = ""
         } else {
             totalHoursMode = false
-            totalHoursInput = ""
+            totalHoursPart = ""
+            totalMinutesPart = ""
             try {
                 startTimeInput = LocalTime.parse(shift.startTime).format(TimeHm)
                 endTimeInput = LocalTime.parse(shift.endTime).format(TimeHm)
@@ -305,14 +334,34 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
         inputError = null
     }
 
+    fun updateHidePlus(hidden: Boolean) {
+        hidePlus = hidden
+        settingsRepository.setPlusHidden(hidden)
+    }
+
     fun updateTotalHoursMode(enabled: Boolean) {
         totalHoursMode = enabled
         settingsRepository.setTotalHoursMode(enabled)
         inputError = null
     }
 
+    /** Tong so phut tu hai o Gio/Phut; null khi chua nhap gi hoac so phut khong hop le (>59). */
+    fun enteredTotalMinutes(): Int? {
+        if (totalHoursPart.isBlank() && totalMinutesPart.isBlank()) return null
+        val hours = totalHoursPart.toIntOrNull() ?: 0
+        val minutes = totalMinutesPart.toIntOrNull() ?: 0
+        if (minutes > 59) return null
+        return hours * 60 + minutes
+    }
+
+    fun setTotalMinutes(minutes: Int) {
+        totalHoursPart = (minutes / 60).toString()
+        totalMinutesPart = (minutes % 60).let { if (it == 0) "" else "%02d".format(it) }
+    }
+
     fun clearInputs() {
-        totalHoursInput = ""
+        totalHoursPart = ""
+        totalMinutesPart = ""
         startTimeInput = ""
         endTimeInput = ""
         deliveryCountInput = ""

@@ -95,6 +95,7 @@ class NotesViewModel(application: Application) : AndroidViewModel(application), 
     }
 
     fun startLocationUpdates() {
+        reloadNotes()
         updateGpsState()
         if (!hasLocationPermission || listening) return
         listening = true

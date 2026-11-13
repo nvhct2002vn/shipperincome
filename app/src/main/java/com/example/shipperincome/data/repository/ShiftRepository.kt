@@ -84,20 +84,7 @@ class ShiftRepository(private val dataDir: File) {
         null
     }
 
-    /** Ghi ra file tam roi doi ten de file that khong bao gio bi ghi do dang. */
-    private fun writeAtomically(content: String) {
-        val tmp = File(dataDir, "$FILE_NAME.tmp")
-        tmp.outputStream().use { out ->
-            out.write(content.toByteArray())
-            out.fd.sync()
-        }
-        Files.move(
-            tmp.toPath(),
-            file.toPath(),
-            StandardCopyOption.REPLACE_EXISTING,
-            StandardCopyOption.ATOMIC_MOVE
-        )
-    }
+    private fun writeAtomically(content: String) = writeTextAtomically(dataDir, FILE_NAME, content)
 
     @Serializable
     private data class StoredShift(

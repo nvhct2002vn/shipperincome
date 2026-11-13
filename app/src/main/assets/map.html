@@ -7,6 +7,7 @@
 <style>
 html, body, #map { height: 100%; margin: 0; background: #eef3f1; font-family: sans-serif; }
 body.dark, body.dark #map { background: #1b211e; }
+body.dark .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.9); }
 .leaflet-popup-content-wrapper { border-radius: 14px; }
 .popup-title { font-weight: 700; font-size: 15px; margin-bottom: 6px; color: #141f1c; }
 .popup-note { font-size: 14px; color: #2b3a35; white-space: pre-wrap; }
@@ -19,25 +20,19 @@ body.dark, body.dark #map { background: #1b211e; }
 // Mac dinh o Seoul; ban do tu can lai theo vi tri hien tai va cac diem da luu.
 var map = L.map('map', { zoomControl: true }).setView([37.5665, 126.9780], 12);
 
-// Tile CARTO (du lieu OpenStreetMap): mien phi, dung dieu khoan, co ban sang va toi.
+// Tile OpenStreetMap chuan: mien phi, khong can API key.
+// (CARTO basemaps tra ve anh "API KEY REQUIRED" voi HTTP 200 khi goi tu WebView, nen khong dung nua.)
 // Khong dung endpoint noi bo cua Google (vi pham dieu khoan va co the bi chan bat cu luc nao).
-var TILE_URLS = {
-  light: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-  dark: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-};
-var currentTheme = null;
-var tileLayer = null;
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19,
+  attribution: '&copy; OpenStreetMap contributors'
+}).on('tileerror', function (e) {
+  console.log('Tile error: ' + (e.tile && e.tile.src));
+}).addTo(map);
+
+// Che do toi: dao mau lop tile bang CSS (OSM khong co ban toi chinh thuc), marker khong bi anh huong.
 function setTheme(dark) {
-  var theme = dark ? 'dark' : 'light';
-  if (theme === currentTheme) return;
-  currentTheme = theme;
-  document.body.className = theme;
-  if (tileLayer) map.removeLayer(tileLayer);
-  tileLayer = L.tileLayer(TILE_URLS[theme], {
-    maxZoom: 20,
-    subdomains: 'abcd',
-    attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
-  }).addTo(map);
+  document.body.className = dark ? 'dark' : 'light';
 }
 setTheme(false);
 
@@ -47,10 +42,13 @@ var meLayer = L.layerGroup().addTo(map);
 // Trong WebView, chieu cao 100% cua #map khong phai luc nao cung tinh ra duoc
 // (do ra 0px) nen ban do khong ve gi ca. Gan cung theo chieu cao viewport.
 function fitMapToWindow() {
-  document.getElementById('map').style.height = window.innerHeight + 'px';
+  if (window.innerHeight > 0) {
+    document.getElementById('map').style.height = window.innerHeight + 'px';
+  }
   map.invalidateSize();
 }
 fitMapToWindow();
+window.addEventListener('error', function (e) { console.log('JS error: ' + e.message); });
 
 function esc(s) {
   return String(s).replace(/[&<>"']/g, function (c) {

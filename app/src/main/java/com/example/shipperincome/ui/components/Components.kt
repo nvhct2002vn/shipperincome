@@ -37,6 +37,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -368,9 +369,16 @@ fun Long.utcMillisToLocalDate(): LocalDate = Instant.ofEpochMilli(this).atZone(Z
 fun SingleDatePickerDialog(
     initial: LocalDate,
     onDismiss: () -> Unit,
-    onConfirm: (LocalDate) -> Unit
+    onConfirm: (LocalDate) -> Unit,
+    isSelectable: (LocalDate) -> Boolean = { true }
 ) {
-    val state = rememberDatePickerState(initialSelectedDateMillis = initial.toUtcMillis())
+    val state = rememberDatePickerState(
+        initialSelectedDateMillis = initial.toUtcMillis(),
+        selectableDates = object : SelectableDates {
+            override fun isSelectableDate(utcTimeMillis: Long): Boolean =
+                isSelectable(utcTimeMillis.utcMillisToLocalDate())
+        }
+    )
     DatePickerDialog(
         onDismissRequest = onDismiss,
         confirmButton = {

@@ -80,6 +80,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -108,8 +110,6 @@ import com.example.shipperincome.utils.TimeHm
 import com.example.shipperincome.utils.formatCurrency
 import com.example.shipperincome.utils.formatDuration
 import com.example.shipperincome.utils.formatDurationShort
-import com.example.shipperincome.utils.minutesToHoursInput
-import com.example.shipperincome.utils.parseHoursToMinutes
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.LocalTime
@@ -158,7 +158,8 @@ fun InputScreen(viewModel: ShiftViewModel) {
                 onPrev = { viewModel.changeSelectedDate(selectedDate.minusDays(1)) },
                 onNext = { viewModel.changeSelectedDate(selectedDate.plusDays(1)) },
                 onPickDate = { showDatePicker = true },
-                onToday = { viewModel.changeSelectedDate(LocalDate.now()) }
+                onToday = { viewModel.changeSelectedDate(LocalDate.now()) },
+                showDeliveries = !viewModel.hidePlus
             )
         }
 
@@ -222,7 +223,7 @@ fun InputScreen(viewModel: ShiftViewModel) {
             }
             dailySummary?.let { summary ->
                 item(key = "breakdown") {
-                    DayBreakdownCard(summary, Modifier.padding(horizontal = 16.dp))
+                    DayBreakdownCard(summary, hidePlus = viewModel.hidePlus, modifier = Modifier.padding(horizontal = 16.dp))
                 }
             }
         }
@@ -261,7 +262,8 @@ private fun DayHeader(
     onPrev: () -> Unit,
     onNext: () -> Unit,
     onPickDate: () -> Unit,
-    onToday: () -> Unit
+    onToday: () -> Unit,
+    showDeliveries: Boolean
 ) {
     val onHero = AppTheme.extended.onHero
     val isToday = date == LocalDate.now()
@@ -343,7 +345,9 @@ private fun DayHeader(
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             HeroStat("Giờ làm", formatDurationShort(summary?.totalHours ?: 0.0), Modifier.weight(1f))
             HeroStat("TB / giờ", formatCurrency(summary?.averageHourlyRate ?: 0.0), Modifier.weight(1.4f))
-            HeroStat("Đơn", "${summary?.totalDeliveries ?: 0}", Modifier.weight(0.8f))
+            // So don chi co y nghia voi Plus; khi an Plus thi hien so ca.
+            if (showDeliveries) HeroStat("Đơn", "${summary?.totalDeliveries ?: 0}", Modifier.weight(0.8f))
+            else HeroStat("Ca", "${summary?.shiftCount ?: 0}", Modifier.weight(0.8f))
         }
     }
 }
@@ -362,14 +366,15 @@ private fun ShiftForm(
     var showPlusMission by rememberSaveable { mutableStateOf(false) }
     var showNormalMission by rememberSaveable { mutableStateOf(false) }
     // Chi hien mot loai thu nhap moi luc cho gon; tab con lai van giu so da nhap.
-    var plusTab by rememberSaveable { mutableStateOf(true) }
+    // Mac dinh tab Thuong (hien chi chay don thuong); Plus van chon duoc khi can.
+    var plusTab by rememberSaveable { mutableStateOf(false) }
     // Khi bat dau sua mot ca: mo o nhiem vu neu co, va mo tab cua loai thu nhap ca do co.
+    // Sua xong (hoac huy) thi quay ve tab Thuong.
     LaunchedEffect(viewModel.editingShiftId) {
         showPlusMission = viewModel.plusMissionIncomeInput.isNotBlank()
         showNormalMission = viewModel.normalMissionIncomeInput.isNotBlank()
-        if (viewModel.editingShiftId != null) {
-            plusTab = viewModel.plusIncomeInput.isNotBlank() || viewModel.plusMissionIncomeInput.isNotBlank()
-        }
+        plusTab = viewModel.editingShiftId != null &&
+            (viewModel.plusIncomeInput.isNotBlank() || viewModel.plusMissionIncomeInput.isNotBlank())
     }
     LaunchedEffect(viewModel.inputError) {
         if (viewModel.inputError == ShiftViewModel.ERROR_PLUS_NEEDS_DELIVERIES) plusTab = true
@@ -391,17 +396,21 @@ private fun ShiftForm(
 
         WorkTimeSection(viewModel = viewModel, onPickStart = onPickStart, onPickEnd = onPickEnd)
 
-        Spacer(Modifier.height(16.dp))
-        IncomeTypeSelector(
-            plusSelected = plusTab,
-            onSelect = { plusTab = it },
-            plusTotal = plusTotal,
-            normalTotal = normalTotal
-        )
-        Spacer(Modifier.height(12.dp))
+        // An Plus trong Cai dat thi bo luon tab; tru khi dang sua mot ca cu co tien Plus (de khong giau du lieu).
+        val showPlus = !viewModel.hidePlus || (isEditing && plusTotal > 0.0)
+        Spacer(Modifier.height(if (showPlus) 16.dp else 12.dp))
+        if (showPlus) {
+            IncomeTypeSelector(
+                plusSelected = plusTab,
+                onSelect = { plusTab = it },
+                plusTotal = plusTotal,
+                normalTotal = normalTotal
+            )
+            Spacer(Modifier.height(12.dp))
+        }
 
         AnimatedContent(
-            targetState = plusTab,
+            targetState = plusTab && showPlus,
             transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
             label = "incomeTab"
         ) { isPlus ->
@@ -581,27 +590,57 @@ private fun WorkTimeSection(viewModel: ShiftViewModel, onPickStart: () -> Unit, 
 
 @Composable
 private fun TotalHoursInput(viewModel: ShiftViewModel) {
-    val minutes = parseHoursToMinutes(viewModel.totalHoursInput)
+    val minutes = viewModel.enteredTotalMinutes()
+    val minuteFocus = remember { FocusRequester() }
+    val minuteInvalid = (viewModel.totalMinutesPart.toIntOrNull() ?: 0) > 59
     Column {
-        OutlinedTextField(
-            value = viewModel.totalHoursInput,
-            onValueChange = { value ->
-                viewModel.totalHoursInput = value.filter { it.isDigit() || it in ".,:h" }.take(6)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(
+                value = viewModel.totalHoursPart,
+                onValueChange = { value ->
+                    val digits = value.filter(Char::isDigit).take(2)
+                    viewModel.totalHoursPart = digits
+                    // Go du 2 so gio thi tu nhay sang o phut, nhu nhap "10:10".
+                    if (digits.length == 2) minuteFocus.requestFocus()
+                },
+                label = { Text("Giờ") },
+                placeholder = { Text("0") },
+                leadingIcon = { Icon(Icons.Outlined.Schedule, null) },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword, imeAction = ImeAction.Next),
+                textStyle = MaterialTheme.typography.titleMedium,
+                shape = MaterialTheme.shapes.small,
+                modifier = Modifier.weight(1.2f)
+            )
+            Text(
+                ":",
+                style = MaterialTheme.typography.headlineSmall,
+                modifier = Modifier.padding(horizontal = 8.dp)
+            )
+            OutlinedTextField(
+                value = viewModel.totalMinutesPart,
+                onValueChange = { value -> viewModel.totalMinutesPart = value.filter(Char::isDigit).take(2) },
+                label = { Text("Phút") },
+                placeholder = { Text("00") },
+                isError = minuteInvalid,
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword, imeAction = ImeAction.Next),
+                textStyle = MaterialTheme.typography.titleMedium,
+                shape = MaterialTheme.shapes.small,
+                modifier = Modifier
+                    .weight(1f)
+                    .focusRequester(minuteFocus)
+            )
+        }
+        Text(
+            when {
+                minuteInvalid -> "Số phút phải từ 0 đến 59"
+                minutes != null && minutes > 0 -> "= ${formatDuration(minutes / 60.0)}"
+                else -> "VD: 10 : 10 là 10 giờ 10 phút"
             },
-            label = { Text("Tổng số giờ làm") },
-            placeholder = { Text("VD: 8 hoặc 8.5") },
-            leadingIcon = { Icon(Icons.Outlined.Schedule, null) },
-            suffix = { Text("giờ") },
-            supportingText = {
-                Text(
-                    if (minutes != null && minutes > 0) "= ${formatDuration(minutes / 60.0)}"
-                    else "Gõ 8.5 hoặc 8:30 cho 8 giờ 30 phút"
-                )
-            },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
-            shape = MaterialTheme.shapes.small,
-            modifier = Modifier.fillMaxWidth()
+            style = MaterialTheme.typography.bodySmall,
+            color = if (minuteInvalid) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 16.dp, top = 4.dp, bottom = 4.dp)
         )
         Row(
             modifier = Modifier
@@ -611,17 +650,15 @@ private fun TotalHoursInput(viewModel: ShiftViewModel) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             QuickTimeChip("−30p", Modifier.weight(1.1f)) {
-                val current = minutes ?: 0
-                viewModel.totalHoursInput = minutesToHoursInput((current - 30).coerceAtLeast(30))
+                viewModel.setTotalMinutes(((minutes ?: 0) - 30).coerceAtLeast(30))
             }
             QUICK_HOURS.forEach { h ->
                 QuickTimeChip("${h}h", Modifier.weight(1f), selected = minutes == h * 60) {
-                    viewModel.totalHoursInput = h.toString()
+                    viewModel.setTotalMinutes(h * 60)
                 }
             }
             QuickTimeChip("+30p", Modifier.weight(1.1f)) {
-                val current = minutes ?: 0
-                viewModel.totalHoursInput = minutesToHoursInput((current + 30).coerceAtMost(24 * 60))
+                viewModel.setTotalMinutes(((minutes ?: 0) + 30).coerceAtMost(24 * 60))
             }
         }
     }
@@ -841,7 +878,7 @@ private fun IncomeLine(color: Color, label: String, gross: Double, mission: Doub
 }
 
 @Composable
-private fun DayBreakdownCard(summary: DailySummary, modifier: Modifier = Modifier) {
+private fun DayBreakdownCard(summary: DailySummary, hidePlus: Boolean, modifier: Modifier = Modifier) {
     var expanded by rememberSaveable { mutableStateOf(false) }
     val extended = AppTheme.extended
     SectionCard(
@@ -864,10 +901,14 @@ private fun DayBreakdownCard(summary: DailySummary, modifier: Modifier = Modifie
                 HorizontalDivider(Modifier.padding(vertical = 8.dp))
                 MetricRow("Số ca", "${summary.shiftCount} ca")
                 MetricRow("Tổng giờ làm", formatDuration(summary.totalHours))
-                MetricRow("Plus trước trừ", formatCurrency(summary.totalPlusGrossIncome), valueColor = extended.plus)
-                MetricRow("Plus thực nhận", formatCurrency(summary.totalPlusNetIncome), valueColor = extended.plus)
-                MetricRow("Thường trước trừ", formatCurrency(summary.totalNormalGrossIncome), valueColor = extended.normal)
-                MetricRow("Thường thực nhận", formatCurrency(summary.totalNormalNetIncome), valueColor = extended.normal)
+                if (hidePlus && summary.totalPlusGrossIncome <= 0.0) {
+                    MetricRow("Thuế đã trừ", formatCurrency(summary.totalGrossIncome - summary.totalNetIncome))
+                } else {
+                    MetricRow("Plus trước trừ", formatCurrency(summary.totalPlusGrossIncome), valueColor = extended.plus)
+                    MetricRow("Plus thực nhận", formatCurrency(summary.totalPlusNetIncome), valueColor = extended.plus)
+                    MetricRow("Thường trước trừ", formatCurrency(summary.totalNormalGrossIncome), valueColor = extended.normal)
+                    MetricRow("Thường thực nhận", formatCurrency(summary.totalNormalNetIncome), valueColor = extended.normal)
+                }
                 MetricRow("Trung bình / giờ", "${formatCurrency(summary.averageHourlyRate)}/h")
             }
         }

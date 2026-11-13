@@ -10,10 +10,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.EditNote
+import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.EditNote
+import androidx.compose.material.icons.outlined.EmojiEvents
 import androidx.compose.material.icons.outlined.Insights
 import androidx.compose.material.icons.outlined.Place
 import androidx.compose.material.icons.outlined.Settings
@@ -42,9 +44,11 @@ import androidx.navigation.compose.rememberNavController
 import com.example.shipperincome.ui.components.LocalSnackbarHostState
 import com.example.shipperincome.ui.screen.InputScreen
 import com.example.shipperincome.ui.screen.NotesScreen
+import com.example.shipperincome.ui.screen.RankScreen
 import com.example.shipperincome.ui.screen.SettingsScreen
 import com.example.shipperincome.ui.screen.StatsScreen
 import com.example.shipperincome.ui.viewmodel.NotesViewModel
+import com.example.shipperincome.ui.viewmodel.RankViewModel
 import com.example.shipperincome.ui.viewmodel.SettingsViewModel
 import com.example.shipperincome.ui.viewmodel.ShiftViewModel
 
@@ -58,6 +62,7 @@ private data class TopLevelDestination(
 private val destinations = listOf(
     TopLevelDestination(Routes.INPUT, "Nhập liệu", Icons.Filled.EditNote, Icons.Outlined.EditNote),
     TopLevelDestination(Routes.STATS, "Thống kê", Icons.Filled.Insights, Icons.Outlined.Insights),
+    TopLevelDestination(Routes.RANK, "Rank", Icons.Filled.EmojiEvents, Icons.Outlined.EmojiEvents),
     TopLevelDestination(Routes.NOTES, "Ghi chú", Icons.Filled.Place, Icons.Outlined.Place),
     TopLevelDestination(Routes.SETTINGS, "Cài đặt", Icons.Filled.Settings, Icons.Outlined.Settings)
 )
@@ -111,13 +116,25 @@ fun AppNavigation(viewModel: ShiftViewModel) {
                 ) {
                     composable(Routes.INPUT) { InputScreen(viewModel = viewModel) }
                     composable(Routes.STATS) { StatsScreen(viewModel = viewModel) }
+                    composable(Routes.RANK) {
+                        val rankViewModel: RankViewModel = viewModel()
+                        RankScreen(
+                            viewModel = rankViewModel,
+                            onOpenSettings = { navigateToScreen(navController, Routes.SETTINGS) }
+                        )
+                    }
                     composable(Routes.NOTES) {
                         val notesViewModel: NotesViewModel = viewModel()
                         NotesScreen(notesViewModel = notesViewModel)
                     }
                     composable(Routes.SETTINGS) {
                         val settingsViewModel: SettingsViewModel = viewModel()
-                        SettingsScreen(settingsViewModel = settingsViewModel, shiftViewModel = viewModel)
+                        val notesViewModel: NotesViewModel = viewModel()
+                        SettingsScreen(
+                            settingsViewModel = settingsViewModel,
+                            shiftViewModel = viewModel,
+                            notesViewModel = notesViewModel
+                        )
                     }
                 }
             }
